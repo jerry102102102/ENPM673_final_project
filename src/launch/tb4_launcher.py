@@ -27,7 +27,8 @@ def get_ros2_nodes(*args):
         robot_description=tb4_description,
         relative_path_prefix=os.path.join(package_dir, 'resource'),
         translation='6.66 0.327 -0.00564',
-        rotation='0.00802 -0.0842 0.996 0.263',
+        # Face the nearest initial arrow instead of starting toward the wall.
+        rotation='0 0 1 -1.57',
     )
 
     mappings = [('/diffdrive_controller/cmd_vel_unstamped', '/cmd_vel')]

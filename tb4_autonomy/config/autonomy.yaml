@@ -1,0 +1,62 @@
+vision_controller_node:
+  ros__parameters:
+    image_topic: /camera/image_raw/image_color
+    camera_info_topic: /camera/image_raw/camera_info
+    odom_topic: /odom
+    scan_topic: /scan
+    cmd_vel_topic: /cmd_vel
+    annotated_image_topic: /debug/annotated_image
+    state_topic: /autonomy/state
+    perf_topic: /autonomy/perf
+
+    # Safety default: framework starts in monitoring mode. Set dry_run:=false to move.
+    dry_run: true
+    control_rate_hz: 20.0
+
+    cruise_linear_x: 0.12
+    track_linear_x: 0.08
+    track_kp: 0.002
+    max_angular_z: 0.65
+
+    turn_kp: 1.4
+    turn_angle_rad: 1.57079632679
+    back_turn_angle_rad: 3.14159265359
+    turn_tolerance_rad: 0.05
+    min_turn_angular_z: 0.18
+    search_linear_x: 0.06
+    cooldown_linear_x: 0.08
+
+    logo_stop_s: 3.0
+    horizon_ratio: 0.5
+
+    center_tolerance_px: 40.0
+    target_bbox_area_ratio: 0.08
+    read_timeout_s: 3.0
+    cooldown_s: 1.5
+
+    arrow_threshold_method: otsu
+    arrow_hsv_v_max: 80
+    arrow_blur_kernel: 5
+    arrow_morph_open_kernel: 3
+    arrow_morph_close_kernel: 5
+    arrow_dilate_kernel: 7
+    arrow_dilate_iterations: 1
+    arrow_min_area_ratio: 0.005
+    arrow_max_area_ratio: 0.40
+    arrow_min_aspect_ratio: 0.5
+    arrow_max_aspect_ratio: 2.0
+    arrow_min_black_pixel_ratio: 0.03
+    arrow_warp_width: 300
+    arrow_warp_height: 300
+    arrow_inner_crop_margin_ratio: 0.12
+    arrow_history_size: 5
+    arrow_min_stable_count: 4
+    arrow_process_width: 960
+    arrow_bbox_padding_ratio: 0.20
+    arrow_min_arrow_area_ratio: 0.01
+    arrow_paper_v_min: 110
+    arrow_paper_s_max: 90
+    arrow_paper_min_area_ratio: 0.001
+    arrow_paper_max_area_ratio: 0.25
+    arrow_paper_min_aspect_ratio: 0.3
+    arrow_paper_max_aspect_ratio: 12.0

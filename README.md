@@ -1,5 +1,7 @@
 # ENPM673 Turtlebot Perception Challenge
 
+> **📖 Autonomy package documentation:** See [`tb4_autonomy/README.md`](tb4_autonomy/README.md) for the perception-to-control architecture, how to extend the pipeline, and all configurable parameters.
+
 ## How to install Webots?
 
 Webots R2025a is required to run this simulation.
@@ -42,14 +44,29 @@ git clone https://github.com/adil275/ENPM673-Final-Project-Simulation.git
 cd ENPM673-Final-Project-Simulation/
 # build and install the package
 source /opt/ros/humble/setup.bash
-source install/setup.bash
 colcon build --symlink-install
+source install/setup.bash
 ```
 
 ## Once built, how to start the WeBots simulation?
 
 ``` shell
+# Terminal 1 — launch the Webots scene
+source /opt/ros/humble/setup.bash
+source install/setup.bash
 ros2 launch tb4_sim tb4_launcher.py
+```
+
+## How to run the autonomy controller?
+
+``` shell
+# Terminal 2 — launch the autonomy node (after the simulation is up)
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+# dry_run:=true  → monitor only, no velocity commands (default)
+# dry_run:=false → active control
+ros2 launch tb4_autonomy autonomy.launch.py dry_run:=false
 ```
 
 ## How to stop the WeBots simulation?
