@@ -133,8 +133,8 @@ info "ROS_DISCOVERY_SERVER=$ROS_DISCOVERY_SERVER"
 info "Checking Wi-Fi reachability with ping..."
 ping -c 2 -W 2 "$robot_ip" >/dev/null || fail "Cannot ping $robot_ip. Check Wi-Fi RAL_robots and robot power."
 
-[[ -f /opt/ros/jazzy/setup.bash ]] || fail "Missing /opt/ros/jazzy/setup.bash"
-source /opt/ros/jazzy/setup.bash
+[[ -f /opt/ros/humble/setup.bash ]] || fail "Missing /opt/ros/humble/setup.bash"
+source /opt/ros/humble/setup.bash
 
 [[ -f install/setup.bash ]] || fail "Missing install/setup.bash. Run: colcon build --symlink-install"
 source install/setup.bash
@@ -210,7 +210,7 @@ if [[ "$reset_odom" == true ]]; then
   if ! ros2 service list | grep -qx -- "$reset_service"; then
     warn "reset service $reset_service not visible yet; waiting up to 8 seconds"
   fi
-  if ros2 service list | grep -qx -- "$reset_service" || timeout 8 bash -lc "source /opt/ros/jazzy/setup.bash && source '$repo_root/install/setup.bash' && until ros2 service list | grep -qx -- '$reset_service'; do sleep 1; done"; then
+  if ros2 service list | grep -qx -- "$reset_service" || timeout 8 bash -lc "source /opt/ros/humble/setup.bash && source '$repo_root/install/setup.bash' && until ros2 service list | grep -qx -- '$reset_service'; do sleep 1; done"; then
     info "Resetting odom via $reset_service"
     ros2 service call "$reset_service" irobot_create_msgs/srv/ResetPose "{pose: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}" >/tmp/"${robot}_reset_pose.log" 2>&1 \
       || fail "reset_pose call failed. See /tmp/${robot}_reset_pose.log"
