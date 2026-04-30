@@ -169,6 +169,78 @@ See `autonomy.yaml` for the full list including all arrow detector thresholds.
 
 ---
 
+## Running The Current Controller
+
+Build and source the workspace:
+
+```bash
+cd ~/jerry_workspace/ENPM673_final_project
+source /opt/ros/jazzy/setup.bash
+colcon build --symlink-install
+source install/setup.bash
+```
+
+Start the Webots scene in one terminal:
+
+```bash
+cd ~/jerry_workspace/ENPM673_final_project
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 launch tb4_sim tb4_launcher.py
+```
+
+Start the autonomy controller in a second terminal:
+
+```bash
+cd ~/jerry_workspace/ENPM673_final_project
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 launch tb4_autonomy autonomy.launch.py dry_run:=false use_rviz:=true
+```
+
+Launch arguments:
+
+| Argument | Use |
+|----------|-----|
+| `dry_run:=true` | Safe monitoring mode. Runs perception and RViz but publishes zero velocity. |
+| `dry_run:=false` | Active control. Publishes `/cmd_vel`. |
+| `use_rviz:=true` | Opens RViz with the project debug layout. |
+| `use_rviz:=false` | Runs the controller without RViz. |
+
+RViz displays the annotated camera stream from:
+
+```text
+/debug/annotated_image
+```
+
+That overlay shows:
+
+- arrow bbox / paper corners
+- continuous arrow heading line
+- controller mode, center error, heading error, and command output
+- UMD logo bbox and logo stop state
+- moving ball / horizon debug overlays when available
+
+The current controller is `ArrowSmoothArcController`. It follows arrows with small smooth corrections, and it also runs the other perception pipelines in parallel:
+
+- Arrow detection controls normal driving.
+- UMD logo detection stops the robot once for 3 seconds after 5 confirmed frames.
+- Moving ball detection overrides motion with `BALL_STOP`.
+
+For a safe first check:
+
+```bash
+ros2 launch tb4_autonomy autonomy.launch.py dry_run:=true use_rviz:=true
+```
+
+Then switch to active control:
+
+```bash
+ros2 launch tb4_autonomy autonomy.launch.py dry_run:=false use_rviz:=true
+```
+
+---
+
 ## Running Tests
 
 ```bash
