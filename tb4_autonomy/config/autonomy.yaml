@@ -5,6 +5,7 @@ vision_controller_node:
     odom_topic: /odom
     scan_topic: /scan
     cmd_vel_topic: /cmd_vel
+    cmd_vel_stamped: false
     annotated_image_topic: /debug/annotated_image
     state_topic: /autonomy/state
     perf_topic: /autonomy/perf

@@ -4,7 +4,7 @@ import math
 import time
 
 from cv_bridge import CvBridge
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, TwistStamped
 from nav_msgs.msg import Odometry
 import rclpy
 from rclpy.executors import ExternalShutdownException
@@ -32,6 +32,7 @@ class VisionControllerNode(Node):
         self.odom_topic = self._declare('odom_topic', '/odom')
         self.scan_topic = self._declare('scan_topic', '/scan')
         self.cmd_vel_topic = self._declare('cmd_vel_topic', '/cmd_vel')
+        self.cmd_vel_stamped = bool(self._declare('cmd_vel_stamped', False))
         self.annotated_image_topic = self._declare('annotated_image_topic', '/debug/annotated_image')
         self.state_topic = self._declare('state_topic', '/autonomy/state')
         self.perf_topic = self._declare('perf_topic', '/autonomy/perf')
@@ -203,7 +204,8 @@ class VisionControllerNode(Node):
         self.latest_image_height = 0
         self.latest_frame_ms = 0.0
 
-        self.cmd_pub = self.create_publisher(Twist, self.cmd_vel_topic, 10)
+        cmd_msg_type = TwistStamped if self.cmd_vel_stamped else Twist
+        self.cmd_pub = self.create_publisher(cmd_msg_type, self.cmd_vel_topic, 10)
         self.debug_image_pub = self.create_publisher(Image, self.annotated_image_topic, 10)
         self.state_pub = self.create_publisher(String, self.state_topic, 10)
         self.perf_pub = self.create_publisher(String, self.perf_topic, 10)
@@ -340,11 +342,22 @@ class VisionControllerNode(Node):
         if self.dry_run:
             twist = Twist()
 
-        self.cmd_pub.publish(twist)
+        self._publish_cmd_vel(twist)
 
         state_msg = String()
         state_msg.data = state.value
         self.state_pub.publish(state_msg)
+
+    def _publish_cmd_vel(self, twist: Twist) -> None:
+        if not self.cmd_vel_stamped:
+            self.cmd_pub.publish(twist)
+            return
+
+        stamped = TwistStamped()
+        stamped.header.stamp = self.get_clock().now().to_msg()
+        stamped.header.frame_id = 'base_link'
+        stamped.twist = twist
+        self.cmd_pub.publish(stamped)
 
     def _arrow_twist(self, now_sec: float) -> tuple[Twist, AutonomyState]:
         output = self.arrow_controller.update(
@@ -530,7 +543,7 @@ def main(args=None):
         pass
     finally:
         if rclpy.ok():
-            node.cmd_pub.publish(Twist())
+            node._publish_cmd_vel(Twist())
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
