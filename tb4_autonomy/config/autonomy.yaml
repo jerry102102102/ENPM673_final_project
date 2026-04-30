@@ -34,6 +34,9 @@ vision_controller_node:
     read_timeout_s: 3.0
     cooldown_s: 1.5
 
+    # Stop for logo only after this many consecutive confirmed frames.
+    logo_confirm_frames: 5
+
     arrow_smooth_arc_controller:
       # acquire paper, not stable label
       min_confidence: 0.45

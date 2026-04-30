@@ -17,7 +17,7 @@ except ModuleNotFoundError:
 class LogoDetector:
     name = 'logo'   # Unique name for this detector
 
-    def __init__(self):
+    def __init__(self, detect_threshold: int = 5):
         self.orb = cv2.ORB_create(nfeatures=800)   # Increase number of features to improve detection robustness
 
         ref_path = self._find_reference_logo_path()
@@ -31,7 +31,7 @@ class LogoDetector:
         self.bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)   # Use Brute-Force matcher with Hamming distance for ORB descriptors
 
         self.detect_count = 0   # Counter to keep track of consecutive detections
-        self.detect_threshold = 5   # Number of consecutive detections required to confirm the presence of the logo
+        self.detect_threshold = max(1, int(detect_threshold))   # Number of consecutive detections required to confirm the presence of the logo
 
         self.min_matches = 15   # Minimum number of good matches required to consider a detection valid
         self.ratio_thresh = 0.75   # Lowe's ratio test threshold to filter out false matches

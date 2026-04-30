@@ -40,6 +40,7 @@ class VisionControllerNode(Node):
         self.horizon_ratio = float(self._declare('horizon_ratio', 0.5))
 
         self.logo_stop_s = float(self._declare('logo_stop_s', 3.0))
+        self.logo_confirm_frames = int(self._declare('logo_confirm_frames', 5))
         self.logo_stop_until: float | None = None
         self.logo_armed = True
         arrow_config = ArrowDetectorConfig(
@@ -188,7 +189,7 @@ class VisionControllerNode(Node):
         self.latest_controller_debug: dict[str, object] = {}
         self.detectors = {
             'arrow': ArrowDetector(arrow_config),
-            'logo': LogoDetector(),
+            'logo': LogoDetector(detect_threshold=self.logo_confirm_frames),
             'moving_ball': MovingBallDetector(),
             'horizon': HorizonDetector(self.horizon_ratio),
         }
@@ -285,6 +286,7 @@ class VisionControllerNode(Node):
                 f'dry_run: {self.dry_run}',
                 f'frame: {self.latest_frame_ms:.1f} ms',
                 f'yaw: {0.0 if self.latest_yaw is None else self.latest_yaw:.2f} rad',
+                self._logo_status_line(results),
                 self._arrow_status_line(results),
                 self._controller_status_line('CENTER_ERR', 'center_error_px', '.0f', 'px'),
                 self._controller_status_line('CENTER_BIAS', 'center_bias_deg', '.1f', 'deg'),
@@ -319,10 +321,12 @@ class VisionControllerNode(Node):
             twist = Twist()
             state = AutonomyState.BALL_STOP
             self.arrow_controller.reset()
+            self._set_stop_debug(state, now_sec, twist, 'moving_ball_stop')
         elif self.logo_stop_until is not None and now_sec < self.logo_stop_until:
             twist = Twist()
             state = AutonomyState.LOGO_STOP
             self.arrow_controller.reset()
+            self._set_stop_debug(state, now_sec, twist, 'logo_stop_hold')
         elif self.logo_stop_until is not None:
             self.logo_stop_until = None
             twist, state = self._arrow_twist(now_sec)
@@ -332,6 +336,7 @@ class VisionControllerNode(Node):
             self.logo_stop_until = now_sec + self.logo_stop_s
             self.logo_armed = False
             self.arrow_controller.reset()
+            self._set_stop_debug(state, now_sec, twist, 'logo_confirmed_stop')
         else:
             twist, state = self._arrow_twist(now_sec)
 
@@ -363,6 +368,26 @@ class VisionControllerNode(Node):
             self.get_logger().info(self._format_debug_info(output.debug_info))
         return output.twist, output.current_state
 
+    def _set_stop_debug(self, state: AutonomyState, now_sec: float, twist: Twist, reason: str) -> None:
+        remaining = 0.0
+        if self.logo_stop_until is not None:
+            remaining = max(0.0, self.logo_stop_until - now_sec)
+        logo_detector = self.detectors.get('logo')
+        logo_count = getattr(logo_detector, 'detect_count', 0)
+        logo_threshold = getattr(logo_detector, 'detect_threshold', self.logo_confirm_frames)
+        self.latest_controller_debug = {
+            'state': state.value,
+            'control_mode': reason,
+            'linear_x': twist.linear.x,
+            'angular_z': twist.angular.z,
+            'angular_target': twist.angular.z,
+            'angular_smoothed': twist.angular.z,
+            'logo_stop_remaining_sec': remaining,
+            'logo_detect_count': logo_count,
+            'logo_confirm_frames': logo_threshold,
+            'transition_reason': reason,
+        }
+
     def _arrow_status_line(self, results: DetectionResults) -> str:
         if results.arrow is None:
             return 'arrow: none'
@@ -381,6 +406,22 @@ class VisionControllerNode(Node):
             f'axis_dbg={arrow.axis_direction}:{arrow.axis_confidence:.2f} '
             f'box=({arrow.box.x},{arrow.box.y},{arrow.box.w},{arrow.box.h}) '
             f'black_px={arrow.black_pixel_ratio:.3f}'
+        )
+
+    def _logo_status_line(self, results: DetectionResults) -> str:
+        logo_detector = self.detectors.get('logo')
+        count = getattr(logo_detector, 'detect_count', 0)
+        threshold = getattr(logo_detector, 'detect_threshold', self.logo_confirm_frames)
+        remaining = 0.0
+        if self.logo_stop_until is not None:
+            remaining = max(0.0, self.logo_stop_until - self.get_clock().now().nanoseconds * 1e-9)
+        if results.logo is None:
+            return f'logo: count={count}/{threshold} stop={remaining:.1f}s'
+        return (
+            f'logo: CONFIRMED count={count}/{threshold} '
+            f'conf={results.logo.confidence:.1f} '
+            f'box=({results.logo.box.x},{results.logo.box.y},{results.logo.box.w},{results.logo.box.h}) '
+            f'stop={remaining:.1f}s'
         )
 
     def _debug_value(self, key: str, default=''):
