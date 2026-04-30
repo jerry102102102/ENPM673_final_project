@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 
 class AutonomyState(str, Enum):
@@ -18,6 +18,9 @@ class AutonomyState(str, Enum):
     LOGO_STOP = 'LOGO_STOP'
     BALL_STOP = 'BALL_STOP'
     FINISHED = 'FINISHED'
+    WAIT_FOR_TARGET = 'WAIT_FOR_TARGET'
+    SMOOTH_ARC_TRACK = 'SMOOTH_ARC_TRACK'
+    PASS_TO_NEXT = 'PASS_TO_NEXT'
 
 
 @dataclass(frozen=True)
@@ -45,15 +48,36 @@ class ArrowDetection:
     direction: str = 'unknown'
     confidence: float = 0.0
     raw_direction: str = 'unknown'
-    corners: tuple[tuple[int, int], ...] | None = None
+    corners: tuple | None = None
     area_ratio: float = 0.0
     black_pixel_ratio: float = 0.0
     center_error_px: float = 0.0
     is_stable: bool = False
     arrow_angle_rad: float = 0.0
-    warped_debug_image: Any | None = None
-    mask_debug_image: Any | None = None
+    warped_debug_image: object = None
+    mask_debug_image: object = None
 
+    # ===== 新畫圖功能相容欄位 =====
+    heading_angle_rad: Optional[float] = None
+    heading_angle_deg: Optional[float] = None
+    heading_valid: bool = False
+    heading_confidence: float = 0.0
+    arrow_presence_confidence: float = 0.0
+    heading_error_rad: Optional[float] = None
+    heading_source: str = ''
+    heading_base: Optional[tuple[int, int]] = None
+    heading_tip: Optional[tuple[int, int]] = None
+    final_confidence: float = 0.0
+    black_arrow_direction: str = 'unknown'
+    black_arrow_confidence: float = 0.0
+    template_direction: str = 'unknown'
+    template_dominance: float = 0.0
+    axis_angle_rad: Optional[float] = None
+    axis_direction: str = 'unknown'
+    axis_confidence: float = 0.0
+    paper_axis_angle_rad: Optional[float] = None
+    paper_heading_angle_rad: Optional[float] = None
+    warped_heading_debug_image: object = None
 
 @dataclass
 class LogoDetection:

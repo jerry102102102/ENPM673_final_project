@@ -33,30 +33,16 @@
         <gyroName>p3d gyro</gyroName>
       </plugin>
 
-      <plugin type="webots_ros2_control::Ros2Control" />
+      <plugin type="tb4_sim.cmd_vel_driver.CmdVelDriver">
+        <cmdVelTopic>/cmd_vel</cmdVelTopic>
+        <odomTopic>/odom</odomTopic>
+        <leftMotor>left_wheel_joint</leftMotor>
+        <rightMotor>right_wheel_joint</rightMotor>
+        <wheelSeparation>0.25</wheelSeparation>
+        <wheelRadius>0.036</wheelRadius>
+        <maxWheelSpeed>20.0</maxWheelSpeed>
+      </plugin>
 
     </webots>
-
-    <ros2_control name="WebotsControl" type="system">
-      <hardware>
-        <plugin>webots_ros2_control::Ros2ControlSystem</plugin>
-      </hardware>
-      <joint name="right_wheel_joint">
-        <command_interface name="velocity">
-            <param name="min">-20</param>
-            <param name="max">20</param>
-        </command_interface>
-        <state_interface name="position" />
-        <state_interface name="velocity" />
-      </joint>
-      <joint name="left_wheel_joint">
-        <command_interface name="velocity">
-            <param name="min">-20</param>
-            <param name="max">20</param>
-        </command_interface>
-        <state_interface name="position" />
-        <state_interface name="velocity" />
-      </joint>
-    </ros2_control>
 
 </robot>

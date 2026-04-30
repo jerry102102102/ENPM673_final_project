@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import time
 
 from cv_bridge import CvBridge
@@ -12,13 +13,12 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image, LaserScan
 from std_msgs.msg import String
 
+from tb4_autonomy.arrow_smooth_arc_controller import ArrowSmoothArcConfig, ArrowSmoothArcController
 from tb4_autonomy.data_types import AutonomyState, DetectionResults, FrameContext
 from tb4_autonomy.detectors.arrow_detector import ArrowDetector, ArrowDetectorConfig
 from tb4_autonomy.detectors.horizon_detector import HorizonDetector
 from tb4_autonomy.detectors.logo_detector import LogoDetector
 from tb4_autonomy.detectors.moving_ball_detector import MovingBallDetector
-from tb4_autonomy.motion_controller import MotionController, MotionControllerConfig
-from tb4_autonomy.state_machine import StateMachine, StateMachineConfig
 from tb4_autonomy.utils.geometry import yaw_from_quaternion
 from tb4_autonomy.utils.image_tools import draw_detections, draw_status
 
@@ -39,26 +39,9 @@ class VisionControllerNode(Node):
         self.control_rate_hz = float(self._declare('control_rate_hz', 20.0))
         self.horizon_ratio = float(self._declare('horizon_ratio', 0.5))
 
-        motion_config = MotionControllerConfig(
-            cruise_linear_x=float(self._declare('cruise_linear_x', 0.12)),
-            track_linear_x=float(self._declare('track_linear_x', 0.08)),
-            track_kp=float(self._declare('track_kp', 0.002)),
-            max_angular_z=float(self._declare('max_angular_z', 0.65)),
-            turn_kp=float(self._declare('turn_kp', 1.4)),
-            turn_angle_rad=float(self._declare('turn_angle_rad', 1.57079632679)),
-            back_turn_angle_rad=float(self._declare('back_turn_angle_rad', 3.14159265359)),
-            turn_tolerance_rad=float(self._declare('turn_tolerance_rad', 0.05)),
-            min_turn_angular_z=float(self._declare('min_turn_angular_z', 0.18)),
-            search_linear_x=float(self._declare('search_linear_x', 0.06)),
-            cooldown_linear_x=float(self._declare('cooldown_linear_x', 0.08)),
-        )
-        state_config = StateMachineConfig(
-            logo_stop_s=float(self._declare('logo_stop_s', 3.0)),
-            center_tolerance_px=float(self._declare('center_tolerance_px', 40.0)),
-            target_bbox_area_ratio=float(self._declare('target_bbox_area_ratio', 0.08)),
-            read_timeout_s=float(self._declare('read_timeout_s', 3.0)),
-            cooldown_s=float(self._declare('cooldown_s', 1.5)),
-        )
+        self.logo_stop_s = float(self._declare('logo_stop_s', 3.0))
+        self.logo_stop_until: float | None = None
+        self.logo_armed = True
         arrow_config = ArrowDetectorConfig(
             threshold_method=str(self._declare('arrow_threshold_method', 'otsu')),
             hsv_v_max=int(self._declare('arrow_hsv_v_max', 80)),
@@ -80,17 +63,129 @@ class VisionControllerNode(Node):
             process_width=int(self._declare('arrow_process_width', 960)),
             bbox_padding_ratio=float(self._declare('arrow_bbox_padding_ratio', 0.20)),
             min_arrow_area_ratio=float(self._declare('arrow_min_arrow_area_ratio', 0.01)),
-            paper_v_min=int(self._declare('arrow_paper_v_min', 110)),
+            paper_v_min=int(self._declare('arrow_paper_v_min', 130)),
             paper_s_max=int(self._declare('arrow_paper_s_max', 90)),
             paper_min_area_ratio=float(self._declare('arrow_paper_min_area_ratio', 0.001)),
             paper_max_area_ratio=float(self._declare('arrow_paper_max_area_ratio', 0.25)),
             paper_min_aspect_ratio=float(self._declare('arrow_paper_min_aspect_ratio', 0.3)),
             paper_max_aspect_ratio=float(self._declare('arrow_paper_max_aspect_ratio', 12.0)),
+            floor_roi_min_y_ratio=float(self._declare('arrow_floor_roi_min_y_ratio', 0.45)),
+            candidate_max_center_error_ratio=float(self._declare('arrow_candidate_max_center_error_ratio', 0.40)),
+            min_candidate_bottom_ratio=float(self._declare('arrow_min_candidate_bottom_ratio', 0.45)),
+            reject_back_direction=bool(self._declare('arrow_reject_back_direction', True)),
+            max_valid_bbox_width_ratio=float(self._declare('arrow_max_valid_bbox_width_ratio', 0.70)),
+            max_valid_bbox_height_ratio=float(self._declare('arrow_max_valid_bbox_height_ratio', 0.70)),
+            max_valid_final_area_ratio=float(self._declare('arrow_max_valid_final_area_ratio', 0.16)),
+            min_valid_final_area_ratio=float(self._declare('arrow_min_valid_final_area_ratio', 0.001)),
+            max_border_touch_ratio=float(self._declare('arrow_max_border_touch_ratio', 0.03)),
+            max_valid_paper_aspect_ratio=float(self._declare('arrow_max_valid_paper_aspect_ratio', 4.0)),
+            min_valid_paper_aspect_ratio=float(self._declare('arrow_min_valid_paper_aspect_ratio', 0.25)),
+            min_history_confidence=float(self._declare('arrow_min_history_confidence', 0.45)),
+            use_axis_direction=bool(self._declare('arrow_use_axis_direction', False)),
+            use_paper_orientation_heading=bool(self._declare('arrow_use_paper_orientation_heading', False)),
+            paper_heading_forward_angle_rad=float(self._declare('arrow_paper_heading_forward_angle_rad', 1.57079632679)),
+            paper_heading_use_previous_when_ambiguous=bool(
+                self._declare('arrow_paper_heading_use_previous_when_ambiguous', True)
+            ),
+            paper_heading_ambiguity_margin_rad=float(
+                self._declare('arrow_paper_heading_ambiguity_margin_rad', 0.20)
+            ),
+            min_arrow_presence_confidence=float(self._declare('arrow_min_arrow_presence_confidence', 0.35)),
+            min_arrow_component_density=float(self._declare('arrow_min_arrow_component_density', 0.25)),
+            min_arrow_component_solidity=float(self._declare('arrow_min_arrow_component_solidity', 0.42)),
+            min_arrow_component_compactness=float(self._declare('arrow_min_arrow_component_compactness', 0.055)),
+            max_arrow_component_area_ratio=float(self._declare('arrow_max_arrow_component_area_ratio', 0.095)),
+        )
+        smooth_arc_config = ArrowSmoothArcConfig(
+            min_confidence=float(self._declare('arrow_smooth_arc_controller.min_confidence', 0.45)),
+            acquire_area_threshold=float(self._declare('arrow_smooth_arc_controller.acquire_area_threshold', 0.020)),
+            close_area_threshold=float(self._declare('arrow_smooth_arc_controller.close_area_threshold', 0.24)),
+            close_bottom_ratio=float(self._declare('arrow_smooth_arc_controller.close_bottom_ratio', 0.995)),
+            focal_px=float(self._declare('arrow_smooth_arc_controller.focal_px', 600.0)),
+            heading_sign=float(self._declare('arrow_smooth_arc_controller.heading_sign', 1.0)),
+            heading_scale=float(self._declare('arrow_smooth_arc_controller.heading_scale', 0.60)),
+            heading_oversteer_deg=float(self._declare('arrow_smooth_arc_controller.heading_oversteer_deg', 5.0)),
+            latched_yaw_alpha=float(self._declare('arrow_smooth_arc_controller.latched_yaw_alpha', 0.20)),
+            latched_heading_confidence_min=float(
+                self._declare('arrow_smooth_arc_controller.latched_heading_confidence_min', 0.55)
+            ),
+            latched_arrow_presence_confidence_min=float(
+                self._declare('arrow_smooth_arc_controller.latched_arrow_presence_confidence_min', 0.45)
+            ),
+            yaw_latch_alpha=float(self._declare('arrow_smooth_arc_controller.yaw_latch_alpha', 0.15)),
+            heading_sample_window=int(self._declare('arrow_smooth_arc_controller.heading_sample_window', 8)),
+            heading_sample_min_count=int(self._declare('arrow_smooth_arc_controller.heading_sample_min_count', 3)),
+            heading_sample_tolerance_deg=float(
+                self._declare('arrow_smooth_arc_controller.heading_sample_tolerance_deg', 30.0)
+            ),
+            min_heading_confidence=float(self._declare('arrow_smooth_arc_controller.min_heading_confidence', 0.65)),
+            min_arrow_presence_confidence=float(
+                self._declare('arrow_smooth_arc_controller.min_arrow_presence_confidence', 0.45)
+            ),
+            heading_update_max_area_ratio=float(
+                self._declare('arrow_smooth_arc_controller.heading_update_max_area_ratio', 0.09)
+            ),
+            heading_update_max_bottom_ratio=float(
+                self._declare('arrow_smooth_arc_controller.heading_update_max_bottom_ratio', 0.95)
+            ),
+            center_sign=float(self._declare('arrow_smooth_arc_controller.center_sign', -1.0)),
+            center_capture_threshold_px=float(self._declare('arrow_smooth_arc_controller.center_capture_threshold_px', 90.0)),
+            min_center_bias_gain=float(self._declare('arrow_smooth_arc_controller.min_center_bias_gain', 0.10)),
+            max_center_bias_gain=float(self._declare('arrow_smooth_arc_controller.max_center_bias_gain', 0.60)),
+            max_center_bias_deg=float(self._declare('arrow_smooth_arc_controller.max_center_bias_deg', 10.0)),
+            kp_yaw=float(self._declare('arrow_smooth_arc_controller.kp_yaw', 1.2)),
+            kp_center=float(self._declare('arrow_smooth_arc_controller.kp_center', 0.70)),
+            kp_heading=float(self._declare('arrow_smooth_arc_controller.kp_heading', 0.45)),
+            max_angular_z=float(self._declare('arrow_smooth_arc_controller.max_angular_z', 0.18)),
+            max_angular_accel=float(self._declare('arrow_smooth_arc_controller.max_angular_accel', 0.35)),
+            yaw_error_deadband_deg=float(self._declare('arrow_smooth_arc_controller.yaw_error_deadband_deg', 3.0)),
+            angular_lowpass_alpha=float(self._declare('arrow_smooth_arc_controller.angular_lowpass_alpha', 0.18)),
+            heading_confidence_soft_min=float(
+                self._declare('arrow_smooth_arc_controller.heading_confidence_soft_min', 0.40)
+            ),
+            heading_confidence_full=float(self._declare('arrow_smooth_arc_controller.heading_confidence_full', 0.80)),
+            arrow_presence_confidence_soft_min=float(
+                self._declare('arrow_smooth_arc_controller.arrow_presence_confidence_soft_min', 0.35)
+            ),
+            arrow_presence_confidence_full=float(
+                self._declare('arrow_smooth_arc_controller.arrow_presence_confidence_full', 0.80)
+            ),
+            track_speed=float(self._declare('arrow_smooth_arc_controller.track_speed', 0.030)),
+            slow_track_speed=float(self._declare('arrow_smooth_arc_controller.slow_track_speed', 0.022)),
+            slow_yaw_error_deg=float(self._declare('arrow_smooth_arc_controller.slow_yaw_error_deg', 25.0)),
+            slow_center_error_px=float(self._declare('arrow_smooth_arc_controller.slow_center_error_px', 100.0)),
+            wait_linear_speed=float(self._declare('arrow_smooth_arc_controller.wait_linear_speed', 0.025)),
+            pass_speed=float(self._declare('arrow_smooth_arc_controller.pass_speed', 0.035)),
+            pass_time_sec=float(self._declare('arrow_smooth_arc_controller.pass_time_sec', 0.15)),
+            missing_detection_hold_sec=float(
+                self._declare('arrow_smooth_arc_controller.missing_detection_hold_sec', 0.20)
+            ),
+            pass_max_heading_error_deg=float(
+                self._declare('arrow_smooth_arc_controller.pass_max_heading_error_deg', 6.0)
+            ),
+            finish_heading_timeout_sec=float(
+                self._declare('arrow_smooth_arc_controller.finish_heading_timeout_sec', 1.5)
+            ),
+            finish_heading_speed=float(self._declare('arrow_smooth_arc_controller.finish_heading_speed', 0.015)),
+            finish_heading_kp=float(self._declare('arrow_smooth_arc_controller.finish_heading_kp', 0.40)),
+            finish_heading_max_angular_z=float(
+                self._declare('arrow_smooth_arc_controller.finish_heading_max_angular_z', 0.08)
+            ),
+            finish_center_kp=float(self._declare('arrow_smooth_arc_controller.finish_center_kp', 0.35)),
+            finish_center_max_bias_deg=float(
+                self._declare('arrow_smooth_arc_controller.finish_center_max_bias_deg', 5.0)
+            ),
+            finish_center_tolerance_px=float(
+                self._declare('arrow_smooth_arc_controller.finish_center_tolerance_px', 45.0)
+            ),
+            min_track_time_sec=float(self._declare('arrow_smooth_arc_controller.min_track_time_sec', 0.8)),
+            debug_log=bool(self._declare('arrow_smooth_arc_controller.debug_log', True)),
         )
 
         self.bridge = CvBridge()
-        self.motion = MotionController(motion_config)
-        self.state_machine = StateMachine(state_config)
+        self.arrow_controller = ArrowSmoothArcController(smooth_arc_config)
+        self.previous_arrow_state = self.arrow_controller.state
+        self.latest_controller_debug: dict[str, object] = {}
         self.detectors = {
             'arrow': ArrowDetector(arrow_config),
             'logo': LogoDetector(),
@@ -101,7 +196,7 @@ class VisionControllerNode(Node):
         self.latest_results = DetectionResults()
         self.latest_camera_info: CameraInfo | None = None
         self.latest_scan: LaserScan | None = None
-        self.latest_yaw = 0.0
+        self.latest_yaw: float | None = None
         self.latest_odom_linear_x = 0.0
         self.latest_image_width = 0
         self.latest_image_height = 0
@@ -178,17 +273,30 @@ class VisionControllerNode(Node):
         results.timings_ms = timings_ms
         self.latest_results = results
         self.latest_frame_ms = (time.perf_counter() - start) * 1000.0
+        if self.arrow_controller.config.debug_log:
+            self.get_logger().info(self._format_detector_debug(results.arrow))
 
         annotated = frame.copy()
         draw_detections(annotated, results)
         draw_status(
             annotated,
             [
-                f'state: {self.state_machine.state.value}',
+                f"STATE: {self._debug_value('state', self.arrow_controller.state.value)}",
                 f'dry_run: {self.dry_run}',
                 f'frame: {self.latest_frame_ms:.1f} ms',
-                f'yaw: {self.latest_yaw:.2f} rad',
+                f'yaw: {0.0 if self.latest_yaw is None else self.latest_yaw:.2f} rad',
                 self._arrow_status_line(results),
+                self._controller_status_line('CENTER_ERR', 'center_error_px', '.0f', 'px'),
+                self._controller_status_line('CENTER_BIAS', 'center_bias_deg', '.1f', 'deg'),
+                self._controller_status_line('HEAD_ERR', 'heading_error_rad', '.2f', 'rad'),
+                self._control_mode_status_line(),
+                self._controller_status_line('HEAD_W', 'heading_weight', '.2f', ''),
+                self._controller_status_line('C_TERM', 'center_term', '.3f', ''),
+                self._controller_status_line('H_TERM', 'heading_term', '.3f', ''),
+                self._controller_status_line('ANG_TGT', 'angular_target', '.3f', ''),
+                self._controller_status_line('YAW_ERR', 'yaw_error_deg', '.1f', 'deg'),
+                self._controller_status_line('AREA', 'area_ratio', '.3f', ''),
+                self._cmd_status_line(),
             ],
         )
         debug_msg = self.bridge.cv2_to_imgmsg(annotated, encoding='bgr8')
@@ -202,55 +310,58 @@ class VisionControllerNode(Node):
 
     def control_timer_callback(self) -> None:
         now_sec = self.get_clock().now().nanoseconds * 1e-9
-        turn_complete = False
-        if self.state_machine.state == AutonomyState.EXECUTE_TURN:
-            _, turn_complete = self.motion.update_turn(self.latest_yaw)
+        state = self.arrow_controller.state
 
-        output = self.state_machine.update(self.latest_results, now_sec, turn_complete)
-        if output.entered_state and output.state == AutonomyState.EXECUTE_TURN:
-            self.motion.start_turn(output.turn_direction or 'unknown', self.latest_yaw, output.turn_angle_rad)
+        if self.latest_results.logo is None and self.logo_stop_until is None:
+            self.logo_armed = True
 
-        twist = self._twist_for_state(output.state)
+        if self.latest_results.has_moving_ball:
+            twist = Twist()
+            state = AutonomyState.BALL_STOP
+            self.arrow_controller.reset()
+        elif self.logo_stop_until is not None and now_sec < self.logo_stop_until:
+            twist = Twist()
+            state = AutonomyState.LOGO_STOP
+            self.arrow_controller.reset()
+        elif self.logo_stop_until is not None:
+            self.logo_stop_until = None
+            twist, state = self._arrow_twist(now_sec)
+        elif self.latest_results.logo is not None and self.logo_armed:
+            twist = Twist()
+            state = AutonomyState.LOGO_STOP
+            self.logo_stop_until = now_sec + self.logo_stop_s
+            self.logo_armed = False
+            self.arrow_controller.reset()
+        else:
+            twist, state = self._arrow_twist(now_sec)
+
         if self.dry_run:
-            twist = self.motion.stop()
+            twist = Twist()
 
         self.cmd_pub.publish(twist)
 
-        state = String()
-        state.data = output.state.value
-        self.state_pub.publish(state)
+        state_msg = String()
+        state_msg.data = state.value
+        self.state_pub.publish(state_msg)
 
-    def _twist_for_state(self, state: AutonomyState) -> Twist:
-        if state in (
-            AutonomyState.IDLE,
-            AutonomyState.LOGO_STOP,
-            AutonomyState.BALL_STOP,
-            AutonomyState.FINISHED,
-            AutonomyState.READ_ARROW,
-        ):
-            return self.motion.stop()
-
-        if state == AutonomyState.SEARCH_SIGN:
-            return self.motion.search()
-
-        if state == AutonomyState.ARROW_COOLDOWN:
-            return self.motion.cooldown_forward()
-
-        if state == AutonomyState.EXECUTE_TURN:
-            twist, _ = self.motion.update_turn(self.latest_yaw)
-            return twist
-
-        if state == AutonomyState.ALIGN_TO_SIGN and self.latest_results.arrow is not None:
-            center_x = self.latest_results.arrow.box.center[0]
-            error_px = center_x - self.latest_image_width / 2.0
-            return self.motion.align_x_error(error_px, self.latest_image_width)
-
-        if state in (AutonomyState.TRACK_ARROW, AutonomyState.APPROACH_SIGN) and self.latest_results.arrow is not None:
-            center_x = self.latest_results.arrow.box.center[0]
-            error_px = center_x - self.latest_image_width / 2.0
-            return self.motion.track_x_error(error_px, self.latest_image_width)
-
-        return self.motion.cruise()
+    def _arrow_twist(self, now_sec: float) -> tuple[Twist, AutonomyState]:
+        output = self.arrow_controller.update(
+            self.latest_results.arrow,
+            self.latest_image_width,
+            self.latest_image_height,
+            now_sec,
+            self.latest_yaw,
+        )
+        arrow_detector = self.detectors.get('arrow')
+        if self.previous_arrow_state == AutonomyState.PASS_TO_NEXT and output.current_state == AutonomyState.WAIT_FOR_TARGET:
+            arrow_detector.reset_history()
+        if str(output.debug_info.get('transition_reason', '')).startswith('acquired_'):
+            arrow_detector.reset_history()
+        self.previous_arrow_state = output.current_state
+        self.latest_controller_debug = output.debug_info
+        if self.arrow_controller.config.debug_log:
+            self.get_logger().info(self._format_debug_info(output.debug_info))
+        return output.twist, output.current_state
 
     def _arrow_status_line(self, results: DetectionResults) -> str:
         if results.arrow is None:
@@ -258,7 +369,117 @@ class VisionControllerNode(Node):
         arrow = results.arrow
         return (
             f'arrow: stable={arrow.direction} raw={arrow.raw_direction} '
-            f'area={arrow.area_ratio:.3f} err={arrow.center_error_px:.0f}px'
+            f'area={arrow.area_ratio:.3f} err={arrow.center_error_px:.0f}px '
+            f'src={arrow.heading_source} '
+            f'valid={arrow.heading_valid} '
+            f'head={0.0 if arrow.heading_error_rad is None else arrow.heading_error_rad:.2f} '
+            f'angle={0.0 if arrow.heading_angle_deg is None else arrow.heading_angle_deg:.1f}deg '
+            f'exist={arrow.arrow_presence_confidence:.2f} '
+            f'paper_dbg={0.0 if arrow.paper_heading_angle_rad is None else math.degrees(arrow.paper_heading_angle_rad):.1f}deg '
+            f'black={arrow.black_arrow_direction}:{arrow.black_arrow_confidence:.2f} '
+            f'tpl={arrow.template_direction}:{arrow.template_dominance:.2f} '
+            f'axis_dbg={arrow.axis_direction}:{arrow.axis_confidence:.2f} '
+            f'box=({arrow.box.x},{arrow.box.y},{arrow.box.w},{arrow.box.h}) '
+            f'black_px={arrow.black_pixel_ratio:.3f}'
+        )
+
+    def _debug_value(self, key: str, default=''):
+        return self.latest_controller_debug.get(key, default)
+
+    def _controller_status_line(self, label: str, key: str, fmt: str, suffix: str) -> str:
+        value = self.latest_controller_debug.get(key, 0.0)
+        try:
+            text = format(float(value), fmt)
+        except (TypeError, ValueError):
+            text = str(value)
+        return f'{label}: {text}{suffix}'
+
+    def _cmd_status_line(self) -> str:
+        linear = float(self.latest_controller_debug.get('linear_x', 0.0))
+        angular = float(self.latest_controller_debug.get('angular_z', 0.0))
+        return f'CMD: v={linear:.3f}, w={angular:.3f}'
+
+    def _control_mode_status_line(self) -> str:
+        return f"CTRL: {self.latest_controller_debug.get('control_mode', '')}"
+
+    def _format_debug_info(self, info: dict[str, object]) -> str:
+        keys = [
+            'state',
+            'direction',
+            'confidence',
+            'is_stable',
+            'area_ratio',
+            'bbox_bottom_ratio',
+            'center_error_px',
+            'center_angle_deg',
+            'center_weight',
+            'effective_center_gain',
+            'center_bias_deg',
+            'heading_error_rad',
+            'corrected_heading_error_rad',
+            'heading_valid',
+            'heading_confidence',
+            'arrow_presence_confidence',
+            'heading_weight',
+            'center_term',
+            'heading_term',
+            'angular_target',
+            'angular_smoothed',
+            'control_mode',
+            'current_odom_yaw',
+            'arrow_world_yaw',
+            'latched_world_yaw',
+            'finish_heading_started_at',
+            'pass_max_heading_error_deg',
+            'desired_yaw',
+            'yaw_error_deg',
+            'linear_x',
+            'angular_z',
+            'transition_reason',
+        ]
+        parts = []
+        for key in keys:
+            value = info.get(key)
+            if isinstance(value, float):
+                parts.append(f'{key}={value:.3f}')
+            else:
+                parts.append(f'{key}={value}')
+        return 'smooth_arc ' + ' '.join(parts)
+
+    def _format_detector_debug(self, arrow) -> str:
+        detector = self.detectors.get('arrow')
+        reject_reason = getattr(detector, 'last_reject_reason', '')
+        if arrow is None:
+            return f'arrow_detector final_raw_direction=None final_confidence=0.000 reject_reason={reject_reason}'
+        axis_angle_deg = 0.0 if arrow.axis_angle_rad is None else math.degrees(arrow.axis_angle_rad)
+        paper_axis_deg = 0.0 if arrow.paper_axis_angle_rad is None else math.degrees(arrow.paper_axis_angle_rad)
+        paper_heading_deg = (
+            0.0 if arrow.paper_heading_angle_rad is None else math.degrees(arrow.paper_heading_angle_rad)
+        )
+        return (
+            'arrow_detector '
+            f'box=({arrow.box.x},{arrow.box.y},{arrow.box.w},{arrow.box.h}) '
+            f'area_ratio={arrow.area_ratio:.3f} black_pixel_ratio={arrow.black_pixel_ratio:.3f} '
+            f'center_error_px={arrow.center_error_px:.1f} '
+            f'heading_source={arrow.heading_source} '
+            f'heading_valid={arrow.heading_valid} '
+            f'heading_confidence={arrow.heading_confidence:.3f} '
+            f'arrow_presence_confidence={arrow.arrow_presence_confidence:.3f} '
+            f'heading_angle_deg={0.0 if arrow.heading_angle_deg is None else arrow.heading_angle_deg:.1f} '
+            f'paper_heading_source=debug_only '
+            f'paper_axis_deg={paper_axis_deg:.1f} '
+            f'paper_heading_deg={paper_heading_deg:.1f} '
+            f'black_arrow_raw={arrow.black_arrow_direction} '
+            f'black_arrow_confidence={arrow.black_arrow_confidence:.3f} '
+            f'template_direction={arrow.template_direction} '
+            f'template_dominance={arrow.template_dominance:.3f} '
+            f'axis_direction={arrow.axis_direction} '
+            f'axis_confidence={arrow.axis_confidence:.3f} '
+            f'axis_angle_deg={axis_angle_deg:.1f} '
+            f'final_raw_direction={arrow.raw_direction} '
+            f'final_confidence={arrow.confidence:.3f} '
+            f'heading_error_rad={0.0 if arrow.heading_error_rad is None else arrow.heading_error_rad:.3f} '
+            f'reject_reason={reject_reason}'
         )
 
 
@@ -271,7 +492,7 @@ def main(args=None):
         pass
     finally:
         if rclpy.ok():
-            node.cmd_pub.publish(node.motion.stop())
+            node.cmd_pub.publish(Twist())
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

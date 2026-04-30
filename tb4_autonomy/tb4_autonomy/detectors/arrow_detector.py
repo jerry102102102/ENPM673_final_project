@@ -12,6 +12,7 @@ from tb4_autonomy.data_types import ArrowDetection, Box2D
 
 @dataclass
 class ArrowDetectorConfig:
+    # Legacy detector config
     threshold_method: str = 'otsu'
     hsv_v_max: int = 80
     blur_kernel: int = 5
@@ -19,25 +20,66 @@ class ArrowDetectorConfig:
     morph_close_kernel: int = 5
     dilate_kernel: int = 7
     dilate_iterations: int = 1
+
     min_area_ratio: float = 0.005
     max_area_ratio: float = 0.40
     min_aspect_ratio: float = 0.5
     max_aspect_ratio: float = 2.0
     min_black_pixel_ratio: float = 0.03
+
     warp_width: int = 300
     warp_height: int = 300
     inner_crop_margin_ratio: float = 0.12
+
     history_size: int = 5
     min_stable_count: int = 4
+
     process_width: int = 960
     bbox_padding_ratio: float = 0.20
     min_arrow_area_ratio: float = 0.01
+
+    # Paper candidate config
     paper_v_min: int = 110
     paper_s_max: int = 90
     paper_min_area_ratio: float = 0.001
     paper_max_area_ratio: float = 0.25
     paper_min_aspect_ratio: float = 0.3
     paper_max_aspect_ratio: float = 12.0
+
+    # Floor / scene filters
+    floor_roi_min_y_ratio: float = 0.45
+    candidate_max_center_error_ratio: float = 0.45
+
+    # Extra bbox sanity filters; keep permissive enough for close floor signs.
+    min_candidate_bottom_ratio: float = 0.45
+    max_candidate_height_ratio: float = 0.58
+    max_candidate_width_ratio: float = 0.75
+    max_candidate_area_ratio: float = 0.18
+
+    # Compatibility with newer YAML/analyzer parameters.
+    reject_back_direction: bool = True
+    max_valid_bbox_width_ratio: float = 0.70
+    max_valid_bbox_height_ratio: float = 0.70
+    max_valid_final_area_ratio: float = 0.16
+    min_valid_final_area_ratio: float = 0.001
+    max_border_touch_ratio: float = 0.03
+    max_valid_paper_aspect_ratio: float = 4.0
+    min_valid_paper_aspect_ratio: float = 0.25
+    min_history_confidence: float = 0.45
+
+    use_axis_direction: bool = False
+    use_paper_orientation_heading: bool = False
+    paper_heading_forward_angle_rad: float = math.pi / 2.0
+    paper_heading_use_previous_when_ambiguous: bool = True
+    paper_heading_ambiguity_margin_rad: float = 0.20
+
+    # Keep false by default. Merging fragments made boxes too large in this scene.
+    merge_paper_fragments: bool = False
+    min_arrow_presence_confidence: float = 0.35
+    min_arrow_component_density: float = 0.25
+    min_arrow_component_solidity: float = 0.42
+    min_arrow_component_compactness: float = 0.055
+    max_arrow_component_area_ratio: float = 0.20
 
 
 @dataclass
@@ -61,12 +103,28 @@ class _InnerFrame:
     corners: np.ndarray
 
 
+@dataclass
+class _ArrowGeometry:
+    direction: str = 'unknown'
+    mask: np.ndarray | None = None
+    confidence: float = 0.0
+    heading_angle_rad: float | None = None
+    heading_valid: bool = False
+    heading_confidence: float = 0.0
+    arrow_presence_confidence: float = 0.0
+    heading_base_warped: tuple[float, float] | None = None
+    heading_tip_warped: tuple[float, float] | None = None
+    warped_heading_debug_image: np.ndarray | None = None
+
+
 class ArrowDetector:
     """Traditional OpenCV detector for printed arrow signs.
 
-    The detector searches for a high-contrast black sign/arrow region, rectifies
-    the selected planar region, segments the arrow in the warped image, and
-    classifies direction from arrow-contour geometry.
+    This version intentionally keeps the legacy detection logic that worked best,
+    but adds:
+      - floor/height/large-box filters,
+      - no paper-fragment merging by default,
+      - compatibility fields for the newer overlay/analyzer.
     """
 
     name = 'arrow'
@@ -85,17 +143,34 @@ class ArrowDetector:
 
         scaled_frame, scale = self._resize_for_processing(frame)
         mask = self._preprocess(scaled_frame)
-        candidate = self._select_candidate(mask)
-        if candidate is None:
+
+        # In live/offline navigation context, prefer paper candidate first.
+        # This avoids grabbing upper black/white wall objects before the floor paper.
+        if context is None:
+            candidate = self._select_candidate(mask, require_floor=False)
+            if candidate is None:
+                candidate = self._select_paper_candidate(scaled_frame, mask)
+        else:
             candidate = self._select_paper_candidate(scaled_frame, mask)
+            if candidate is None:
+                candidate = self._select_candidate(mask)
+
         if candidate is None:
             self.direction_history.append('unknown')
             return None
 
         corners_small = self._estimate_corners(candidate, mask.shape[:2])
         corners = self._scale_corners(corners_small, scale)
-        warped = self._warp(frame, corners)
-        raw_direction, arrow_mask, arrow_confidence, arrow_angle_rad = self._classify_warped_arrow(warped)
+        paper_transform = self._paper_warp_transform(corners)
+        warped = cv2.warpPerspective(frame, paper_transform, (self.config.warp_width, self.config.warp_height))
+        arrow_geometry = self._classify_warped_arrow(warped)
+        raw_direction = arrow_geometry.direction
+        arrow_mask = arrow_geometry.mask
+        arrow_confidence = arrow_geometry.confidence
+
+        if context is not None and self.config.reject_back_direction and raw_direction == 'back':
+            raw_direction = 'unknown'
+            arrow_confidence *= 0.25
 
         self.direction_history.append(raw_direction)
         stable_direction, stable_confidence, is_stable = self._stable_direction()
@@ -103,22 +178,71 @@ class ArrowDetector:
 
         box = self._scale_box(candidate.box, scale, original_width, original_height)
         center_error = box.center[0] - original_width / 2.0
+        final_area_ratio = box.area / float(original_width * original_height)
         confidence = min(1.0, 0.55 * candidate.score + 0.45 * max(arrow_confidence, stable_confidence))
 
-        return ArrowDetection(
+        heading_angle_rad = arrow_geometry.heading_angle_rad
+        heading_valid = arrow_geometry.heading_valid
+        heading_confidence = arrow_geometry.heading_confidence
+        arrow_presence_confidence = arrow_geometry.arrow_presence_confidence
+        heading_angle_deg = None if heading_angle_rad is None else math.degrees(heading_angle_rad)
+        if not heading_valid or heading_angle_rad is None:
+            heading_error_rad = None
+            heading_source = 'none'
+            heading_base = None
+            heading_tip = None
+        else:
+            heading_error_rad = self._normalize_angle(heading_angle_rad - math.pi / 2.0)
+            heading_source = 'warped_arrow_continuous'
+            heading_base, heading_tip = self._project_warped_heading_line(
+                paper_transform,
+                arrow_geometry.heading_base_warped,
+                arrow_geometry.heading_tip_warped,
+            )
+
+        detection = ArrowDetection(
             box=box,
             direction=direction,
             confidence=confidence,
             raw_direction=raw_direction,
             corners=corners,
-            area_ratio=box.area / float(original_width * original_height),
+            area_ratio=final_area_ratio,
             black_pixel_ratio=candidate.black_pixel_ratio,
             center_error_px=center_error,
             is_stable=is_stable,
-            arrow_angle_rad=arrow_angle_rad,
+            arrow_angle_rad=heading_angle_rad or 0.0,
             warped_debug_image=warped,
             mask_debug_image=arrow_mask,
+
+            # New overlay/controller compatibility fields.
+            heading_angle_rad=heading_angle_rad,
+            heading_angle_deg=heading_angle_deg,
+            heading_valid=heading_valid,
+            heading_confidence=heading_confidence,
+            arrow_presence_confidence=arrow_presence_confidence,
+            heading_error_rad=heading_error_rad,
+            heading_source=heading_source,
+            heading_base=heading_base,
+            heading_tip=heading_tip,
+            final_confidence=confidence,
+            template_direction=raw_direction,
+            template_dominance=float(arrow_confidence),
+            axis_direction='unknown',
+            axis_confidence=0.0,
+            paper_axis_angle_rad=None,
+            paper_heading_angle_rad=None,
+            warped_heading_debug_image=arrow_geometry.warped_heading_debug_image,
         )
+
+        # Dynamic attributes for analyzer versions that expect them.
+        detection.black_arrow_direction = raw_direction
+        detection.black_arrow_confidence = float(arrow_confidence)
+        detection.reject_reason = ''
+
+        return detection
+
+    def reset_history(self) -> None:
+        self.direction_history.clear()
 
     def _resize_for_processing(self, frame):
         height, width = frame.shape[:2]
@@ -143,6 +267,7 @@ class ArrowDetector:
         open_kernel = self._kernel(self.config.morph_open_kernel)
         close_kernel = self._kernel(self.config.morph_close_kernel)
         dilate_kernel = self._kernel(self.config.dilate_kernel)
+
         if open_kernel is not None:
             mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, open_kernel)
         if close_kernel is not None:
@@ -151,7 +276,7 @@ class ArrowDetector:
             mask = cv2.dilate(mask, dilate_kernel, iterations=self.config.dilate_iterations)
         return mask
 
-    def _select_candidate(self, mask):
+    def _select_candidate(self, mask, require_floor: bool = True):
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         height, width = mask.shape[:2]
         image_area = float(width * height)
@@ -162,6 +287,8 @@ class ArrowDetector:
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
             if w <= 0 or h <= 0:
+                continue
+            if require_floor and not self._is_floor_candidate(x, y, w, h, width, height):
                 continue
 
             box_area = w * h
@@ -188,15 +315,13 @@ class ArrowDetector:
             area_score = min(1.0, area_ratio / 0.08)
             score = 0.35 * area_score + 0.25 * center_score + 0.20 * aspect_score + 0.20 * density_score
 
-            candidates.append(
-                _Candidate(
-                    box=Box2D(x=x, y=y, w=w, h=h),
-                    contour=contour,
-                    area_ratio=area_ratio,
-                    black_pixel_ratio=black_ratio,
-                    score=score,
-                )
-            )
+            candidates.append(_Candidate(
+                box=Box2D(x=x, y=y, w=w, h=h),
+                contour=contour,
+                area_ratio=area_ratio,
+                black_pixel_ratio=black_ratio,
+                score=score,
+            ))
 
         if not candidates:
             return None
@@ -209,10 +334,11 @@ class ArrowDetector:
             (0, 0, int(self.config.paper_v_min)),
             (180, int(self.config.paper_s_max), 255),
         )
-        # Ignore the upper wall region; arrow papers are floor-level signs.
-        paper_mask[:int(paper_mask.shape[0] * 0.35), :] = 0
-        paper_mask = cv2.morphologyEx(paper_mask, cv2.MORPH_OPEN, self._kernel(5))
-        paper_mask = cv2.morphologyEx(paper_mask, cv2.MORPH_CLOSE, self._kernel(15))
+        paper_mask[:int(paper_mask.shape[0] * self.config.floor_roi_min_y_ratio), :] = 0
+
+        # Conservative kernels. Large kernels merged nearby signs into huge boxes.
+        paper_mask = cv2.morphologyEx(paper_mask, cv2.MORPH_OPEN, self._kernel(3))
+        paper_mask = cv2.morphologyEx(paper_mask, cv2.MORPH_CLOSE, self._kernel(5))
 
         contours, _ = cv2.findContours(paper_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         height, width = paper_mask.shape[:2]
@@ -222,6 +348,8 @@ class ArrowDetector:
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
             if w <= 0 or h <= 0:
+                continue
+            if not self._is_floor_candidate(x, y, w, h, width, height):
                 continue
 
             box_area = w * h
@@ -256,13 +384,15 @@ class ArrowDetector:
         height: int,
         image_area: float,
     ) -> list[_Candidate]:
-        # The distant Webots paper sign often appears as two disconnected white
-        # strips split by the printed black arrow. Merge strips in the same
-        # horizontal band before rectifying the sign.
+        # Keep each visible floor paper as its own candidate by default.
         boxes = [fragment.box for fragment in fragments]
-        merged_boxes = boxes + self._merge_paper_boxes(boxes, width)
+        if self.config.merge_paper_fragments:
+            candidate_boxes = boxes + self._merge_paper_boxes(boxes, width)
+        else:
+            candidate_boxes = boxes
+
         unique: dict[tuple[int, int, int, int], Box2D] = {}
-        for box in merged_boxes:
+        for box in candidate_boxes:
             key = (box.x, box.y, box.w, box.h)
             unique[key] = box
 
@@ -271,6 +401,8 @@ class ArrowDetector:
             x, y, w, h = box.x, box.y, box.w, box.h
             box_area = w * h
             if box_area <= 0:
+                continue
+            if not self._is_floor_candidate(x, y, w, h, width, height):
                 continue
 
             area_ratio = box_area / image_area
@@ -291,21 +423,18 @@ class ArrowDetector:
             center_dist = math.hypot(center_x - width / 2.0, center_y - height / 2.0)
             max_dist = math.hypot(width / 2.0, height / 2.0)
             center_score = 1.0 - min(1.0, center_dist / max_dist)
+            bottom_score = (y + h) / float(height)
             area_score = min(1.0, area_ratio / 0.04)
             density_score = min(1.0, black_ratio / 0.25)
-            covered_fragments = sum(1 for fragment in fragments if self._contains_box(box, fragment.box))
-            merge_bonus = 0.10 if covered_fragments > 1 else 0.0
-            score = 0.40 * area_score + 0.25 * density_score + 0.20 * center_score + 0.15 + merge_bonus
+            score = 0.38 * bottom_score + 0.25 * area_score + 0.22 * density_score + 0.15 * center_score
 
-            candidates.append(
-                _Candidate(
-                    box=box,
-                    contour=self._rect_contour(box),
-                    area_ratio=area_ratio,
-                    black_pixel_ratio=black_ratio,
-                    score=score,
-                )
-            )
+            candidates.append(_Candidate(
+                box=box,
+                contour=self._rect_contour(box),
+                area_ratio=area_ratio,
+                black_pixel_ratio=black_ratio,
+                score=score,
+            ))
         return candidates
 
     def _merge_paper_boxes(self, boxes: list[Box2D], image_width: int) -> list[Box2D]:
@@ -368,6 +497,38 @@ class ArrowDetector:
             dtype=np.int32,
         )
 
+    def _is_floor_candidate(
+        self,
+        x: int,
+        y: int,
+        w: int,
+        h: int,
+        image_width: int,
+        image_height: int,
+    ) -> bool:
+        if image_width <= 0 or image_height <= 0:
+            return False
+
+        bottom_ratio = (y + h) / float(image_height)
+        height_ratio = h / float(image_height)
+        width_ratio = w / float(image_width)
+        area_ratio = (w * h) / float(image_width * image_height)
+
+        if bottom_ratio < self.config.min_candidate_bottom_ratio:
+            return False
+        if height_ratio > self.config.max_candidate_height_ratio:
+            return False
+        if width_ratio > self.config.max_candidate_width_ratio:
+            return False
+        if area_ratio > self.config.max_candidate_area_ratio:
+            return False
+
+        center_x = x + w / 2.0
+        center_error = abs(center_x - image_width / 2.0)
+        if center_error > image_width * self.config.candidate_max_center_error_ratio:
+            return False
+        return True
+
     def _estimate_corners(self, candidate: _Candidate, mask_shape: tuple[int, int]):
         contour = candidate.contour
         perimeter = cv2.arcLength(contour, True)
@@ -381,8 +542,6 @@ class ArrowDetector:
             if cv2.contourArea(box.astype(np.float32)) > 1.0:
                 return self._order_points(box.astype(np.float32))
 
-        # Fallback: expand the candidate bbox. This is often better than a
-        # tight rotated arrow box when the printed border is not connected.
         height, width = mask_shape
         pad = int(max(candidate.box.w, candidate.box.h) * self.config.bbox_padding_ratio)
         x1 = max(0, candidate.box.x - pad)
@@ -395,6 +554,10 @@ class ArrowDetector:
         )
 
     def _warp(self, frame, corners):
+        transform = self._paper_warp_transform(corners)
+        return cv2.warpPerspective(frame, transform, (self.config.warp_width, self.config.warp_height))
+
+    def _paper_warp_transform(self, corners):
         dst = np.array(
             [
                 [0, 0],
@@ -405,41 +568,360 @@ class ArrowDetector:
             dtype=np.float32,
         )
         src = np.array(corners, dtype=np.float32)
-        transform = cv2.getPerspectiveTransform(src, dst)
-        return cv2.warpPerspective(frame, transform, (self.config.warp_width, self.config.warp_height))
+        return cv2.getPerspectiveTransform(src, dst)
+
+    def _project_warped_heading_line(
+        self,
+        paper_transform,
+        base_warped: tuple[float, float] | None,
+        tip_warped: tuple[float, float] | None,
+    ) -> tuple[tuple[int, int], tuple[int, int]]:
+        if base_warped is None or tip_warped is None:
+            return None, None
+        inverse = np.linalg.inv(paper_transform)
+        points = np.array([[base_warped, tip_warped]], dtype=np.float32)
+        projected = cv2.perspectiveTransform(points, inverse).reshape(2, 2)
+        base = (int(round(float(projected[0, 0]))), int(round(float(projected[0, 1]))))
+        tip = (int(round(float(projected[1, 0]))), int(round(float(projected[1, 1]))))
+        return base, tip
 
     def _classify_warped_arrow(self, warped):
         if warped is None or warped.size == 0:
-            return 'unknown', None, 0.0, 0.0
+            return _ArrowGeometry()
 
-        margin = int(min(warped.shape[:2]) * self.config.inner_crop_margin_ratio)
-        inner = warped[margin:warped.shape[0] - margin, margin:warped.shape[1] - margin]
-        if inner.size == 0:
-            inner = warped
+        mask = self._black_arrow_mask_in_warped_paper(warped)
+        component_mask, contour, presence_confidence = self._select_arrow_component(mask)
+        if contour is None:
+            return _ArrowGeometry(
+                mask=mask,
+                arrow_presence_confidence=presence_confidence,
+                warped_heading_debug_image=self._draw_invalid_warped_debug(warped, presence_confidence),
+            )
+        if presence_confidence < self.config.min_arrow_presence_confidence:
+            return _ArrowGeometry(
+                direction='unknown',
+                mask=component_mask,
+                confidence=presence_confidence,
+                arrow_presence_confidence=presence_confidence,
+                warped_heading_debug_image=self._draw_invalid_warped_debug(warped, presence_confidence),
+            )
 
-        mask = self._preprocess_inner(inner)
+        contour_area = cv2.contourArea(contour)
+        min_area = self.config.min_arrow_area_ratio * float(component_mask.shape[0] * component_mask.shape[1])
+        if contour_area < min_area:
+            return _ArrowGeometry(
+                mask=component_mask,
+                arrow_presence_confidence=presence_confidence,
+                warped_heading_debug_image=self._draw_invalid_warped_debug(warped, presence_confidence),
+            )
+
+        direction, dominance = self._direction_from_mask(contour, component_mask)
+        area_confidence = min(1.0, contour_area / (min_area * 4.0))
+        label_confidence = min(1.0, 0.65 * dominance + 0.35 * area_confidence)
+        heading = self._continuous_heading_from_contour(contour, component_mask, warped, presence_confidence)
+        heading.confidence = label_confidence
+        heading.direction = direction
+        return heading
+
+    def _black_arrow_mask_in_warped_paper(self, warped):
+        mask = self._preprocess_inner(warped)
+        margin = int(min(mask.shape[:2]) * self.config.inner_crop_margin_ratio)
+        if margin > 0:
+            mask[:margin, :] = 0
+            mask[mask.shape[0] - margin:, :] = 0
+            mask[:, :margin] = 0
+            mask[:, mask.shape[1] - margin:] = 0
+
         frame = self._find_inner_frame(mask)
         if frame is not None:
-            arrow_image = self._warp_inner_frame(inner, frame.corners)
-            arrow_mask = self._preprocess_inner(arrow_image)
-            arrow_mask = self._crop_inner_arrow_mask(arrow_mask)
+            x, y, w, h = frame.box.x, frame.box.y, frame.box.w, frame.box.h
+            inset = max(2, int(min(w, h) * 0.08))
+            x1 = max(0, x + inset)
+            y1 = max(0, y + inset)
+            x2 = min(mask.shape[1], x + w - inset)
+            y2 = min(mask.shape[0], y + h - inset)
+            inner_only = np.zeros_like(mask)
+            if x2 > x1 and y2 > y1:
+                inner_only[y1:y2, x1:x2] = mask[y1:y2, x1:x2]
+                mask = inner_only
+
+        open_kernel = self._kernel(3)
+        close_kernel = self._kernel(5)
+        if open_kernel is not None:
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, open_kernel)
+        if close_kernel is not None:
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_kernel)
+        return mask
+
+    def _select_arrow_component(self, mask):
+        count, labels, stats, _centroids = cv2.connectedComponentsWithStats(mask, connectivity=8)
+        if count <= 1:
+            return mask, None, 0.0
+
+        image_area = float(mask.shape[0] * mask.shape[1])
+        min_pixels = max(20, int(image_area * self.config.min_arrow_area_ratio * 0.20))
+        best_label = None
+        best_contour = None
+        best_score = 0.0
+        best_confidence = 0.0
+        for label in range(1, count):
+            x, y, w, h, area = stats[label]
+            if area < min_pixels or w <= 0 or h <= 0:
+                continue
+            component_area_ratio = float(area) / image_area
+            if component_area_ratio > self.config.max_arrow_component_area_ratio:
+                continue
+            if x <= 1 or y <= 1 or x + w >= mask.shape[1] - 2 or y + h >= mask.shape[0] - 2:
+                continue
+
+            density = area / float(w * h)
+            if density < self.config.min_arrow_component_density:
+                continue
+            aspect = w / float(h)
+            if aspect < 0.20 or aspect > 5.0:
+                continue
+
+            component_mask = np.zeros_like(mask)
+            component_mask[labels == label] = 255
+            contours, _ = cv2.findContours(component_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not contours:
+                continue
+            contour = max(contours, key=cv2.contourArea)
+            contour_area = float(cv2.contourArea(contour))
+            if contour_area <= 0.0:
+                continue
+            hull = cv2.convexHull(contour)
+            hull_area = float(cv2.contourArea(hull))
+            perimeter = float(cv2.arcLength(contour, True))
+            solidity = 0.0 if hull_area <= 1e-6 else contour_area / hull_area
+            compactness = 0.0 if perimeter <= 1e-6 else (4.0 * math.pi * contour_area) / (perimeter * perimeter)
+            if solidity < self.config.min_arrow_component_solidity:
+                continue
+            if compactness < self.config.min_arrow_component_compactness:
+                continue
+
+            center_y_score = 1.0 - min(1.0, abs((y + h / 2.0) - mask.shape[0] / 2.0) / (mask.shape[0] / 2.0))
+            center_x_score = 1.0 - min(1.0, abs((x + w / 2.0) - mask.shape[1] / 2.0) / (mask.shape[1] / 2.0))
+            density_score = min(1.0, density / 0.45)
+            area_score = min(1.0, area / max(1.0, image_area * self.config.min_arrow_area_ratio * 1.8))
+            size_score = min(1.0, max(w, h) / max(1.0, min(mask.shape[:2]) * 0.20))
+            solidity_score = min(1.0, solidity / 0.75)
+            compactness_score = min(1.0, compactness / 0.22)
+            presence_confidence = (
+                0.24 * area_score
+                + 0.22 * density_score
+                + 0.20 * solidity_score
+                + 0.16 * compactness_score
+                + 0.08 * center_y_score
+                + 0.05 * center_x_score
+                + 0.05 * size_score
+            )
+            score = float(area) * presence_confidence
+            if score > best_score:
+                best_score = score
+                best_label = label
+                best_contour = contour
+                best_confidence = presence_confidence
+
+        if best_label is None or best_contour is None:
+            return mask, None, 0.0
+
+        component_mask = np.zeros_like(mask)
+        component_mask[labels == best_label] = 255
+        return component_mask, best_contour, best_confidence
+
+    def _continuous_heading_from_contour(self, contour, mask, warped, presence_confidence: float) -> _ArrowGeometry:
+        moments = cv2.moments(contour)
+        if abs(moments['m00']) < 1e-6:
+            return _ArrowGeometry(
+                mask=mask,
+                arrow_presence_confidence=presence_confidence,
+                warped_heading_debug_image=self._draw_invalid_warped_debug(warped, presence_confidence),
+            )
+
+        cx = float(moments['m10'] / moments['m00'])
+        cy = float(moments['m01'] / moments['m00'])
+        base_tip = self._base_and_tip_from_mask_axis(mask, cx, cy)
+        if base_tip is None:
+            tip = self._tip_from_contour(contour, cx, cy)
+            base = np.array([cx, cy], dtype=np.float32)
         else:
-            arrow_mask = self._crop_inner_arrow_mask(mask)
-        contours, _ = cv2.findContours(arrow_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
-            return 'unknown', mask, 0.0, 0.0
+            base, tip = base_tip
+        if tip is None or base is None:
+            return _ArrowGeometry(
+                mask=mask,
+                arrow_presence_confidence=presence_confidence,
+                warped_heading_debug_image=self._draw_invalid_warped_debug(warped, presence_confidence),
+            )
+        bx = float(base[0])
+        by = float(base[1])
+        tx = float(tip[0])
+        ty = float(tip[1])
+        dx = tx - bx
+        dy = ty - by
+        distance = math.hypot(dx, dy)
+        diagonal = math.hypot(mask.shape[1], mask.shape[0])
+        if distance < max(8.0, diagonal * 0.04):
+            return _ArrowGeometry(
+                mask=mask,
+                arrow_presence_confidence=presence_confidence,
+                warped_heading_debug_image=self._draw_invalid_warped_debug(warped, presence_confidence),
+            )
 
-        contour = max(contours, key=cv2.contourArea)
-        contour_area = cv2.contourArea(contour)
-        min_area = self.config.min_arrow_area_ratio * float(arrow_mask.shape[0] * arrow_mask.shape[1])
-        if contour_area < min_area:
-            return 'unknown', mask, 0.0, 0.0
+        heading_angle_rad = self._flip_robot_facing_heading(math.atan2(-dy, dx))
+        heading_angle_deg = math.degrees(heading_angle_rad)
+        length = max(35.0, min(mask.shape[:2]) * 0.22)
+        end_x = bx + math.cos(heading_angle_rad) * length
+        end_y = by - math.sin(heading_angle_rad) * length
+        geometric_confidence = min(1.0, distance / max(1.0, diagonal * 0.18))
+        heading_confidence = min(1.0, 0.55 * geometric_confidence + 0.45 * presence_confidence)
 
-        direction, dominance = self._direction_from_mask(contour, arrow_mask)
-        area_confidence = min(1.0, contour_area / (min_area * 4.0))
-        confidence = min(1.0, 0.65 * dominance + 0.35 * area_confidence)
-        angle_rad = self._angle_from_tip(contour, arrow_mask, direction)
-        return direction, arrow_mask, confidence, angle_rad
+        debug = warped.copy()
+        cv2.circle(debug, (int(round(bx)), int(round(by))), 5, (0, 255, 255), -1)
+        cv2.circle(debug, (int(round(tx)), int(round(ty))), 5, (0, 0, 255), -1)
+        cv2.arrowedLine(
+            debug,
+            (int(round(bx)), int(round(by))),
+            (int(round(end_x)), int(round(end_y))),
+            (255, 0, 0),
+            3,
+            tipLength=0.28,
+        )
+        cv2.putText(
+            debug,
+            f'heading={heading_angle_deg:.1f} deg',
+            (10, 28),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 0, 0),
+            2,
+            cv2.LINE_AA,
+        )
+
+        return _ArrowGeometry(
+            mask=mask,
+            confidence=heading_confidence,
+            heading_angle_rad=heading_angle_rad,
+            heading_valid=True,
+            heading_confidence=heading_confidence,
+            arrow_presence_confidence=presence_confidence,
+            heading_base_warped=(bx, by),
+            heading_tip_warped=(end_x, end_y),
+            warped_heading_debug_image=debug,
+        )
+
+    def _flip_robot_facing_heading(self, heading_angle_rad: float) -> float:
+        # In the warped paper convention, robot-forward is +pi/2. A clean arrow
+        # that points down toward the camera usually means base/tip were swapped.
+        # Flip only down-facing headings; left/right/forward arrows are left alone.
+        down_error = abs(self._normalize_angle(heading_angle_rad + math.pi / 2.0))
+        if down_error <= math.radians(65.0):
+            return self._normalize_angle(heading_angle_rad + math.pi)
+        return self._normalize_angle(heading_angle_rad)
+
+    def _draw_invalid_warped_debug(self, warped, presence_confidence: float):
+        debug = warped.copy()
+        cv2.putText(
+            debug,
+            f'arrow_conf={presence_confidence:.2f} invalid',
+            (10, 28),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 0, 255),
+            2,
+            cv2.LINE_AA,
+        )
+        return debug
+
+    def _base_and_tip_from_mask_axis(self, mask, cx: float, cy: float):
+        ys, xs = np.nonzero(mask)
+        if len(xs) < 12:
+            return None
+        points = np.column_stack([xs, ys]).astype(np.float32)
+        centered = points - np.mean(points, axis=0, keepdims=True)
+        try:
+            _eigenvalues, eigenvectors = np.linalg.eigh(np.cov(centered.T))
+        except np.linalg.LinAlgError:
+            return None
+        axis = eigenvectors[:, -1].astype(np.float32)
+        norm = float(np.linalg.norm(axis))
+        if norm < 1e-6:
+            return None
+        axis /= norm
+        perpendicular = np.array([-axis[1], axis[0]], dtype=np.float32)
+
+        projections = points @ axis
+        perp_values = points @ perpendicular
+        min_projection = float(np.min(projections))
+        max_projection = float(np.max(projections))
+        span = max_projection - min_projection
+        if span < 8.0:
+            return None
+
+        band = max(3.0, span * 0.16)
+        low_mask = projections <= min_projection + band
+        high_mask = projections >= max_projection - band
+        if np.count_nonzero(low_mask) < 2 or np.count_nonzero(high_mask) < 2:
+            return None
+
+        low_spread = float(np.std(perp_values[low_mask]))
+        high_spread = float(np.std(perp_values[high_mask]))
+        centroid_projection = float(np.array([cx, cy], dtype=np.float32) @ axis)
+        low_distance = abs(centroid_projection - min_projection)
+        high_distance = abs(max_projection - centroid_projection)
+
+        if abs(low_spread - high_spread) > max(1.5, span * 0.02):
+            use_high = high_spread < low_spread
+        else:
+            use_high = high_distance >= low_distance
+
+        if use_high:
+            tip_indices = np.where(high_mask)[0]
+            base_indices = np.where(low_mask)[0]
+            tip = points[tip_indices[int(np.argmax(projections[tip_indices]))]]
+        else:
+            tip_indices = np.where(low_mask)[0]
+            base_indices = np.where(high_mask)[0]
+            tip = points[tip_indices[int(np.argmin(projections[tip_indices]))]]
+
+        base_points = points[base_indices]
+        base = np.mean(base_points, axis=0)
+        return base.astype(np.float32), tip.astype(np.float32)
+
+    def _tip_from_mask_axis(self, mask, cx: float, cy: float):
+        base_tip = self._base_and_tip_from_mask_axis(mask, cx, cy)
+        if base_tip is None:
+            return None
+        _base, tip = base_tip
+        return tip
+
+    def _tip_from_contour(self, contour, cx: float, cy: float):
+        hull = cv2.convexHull(contour).reshape(-1, 2).astype(np.float32)
+        if len(hull) < 3:
+            return None
+
+        center = np.array([cx, cy], dtype=np.float32)
+        best_point = None
+        best_score = 0.0
+        for index, point in enumerate(hull):
+            prev_point = hull[(index - 1) % len(hull)]
+            next_point = hull[(index + 1) % len(hull)]
+            v1 = prev_point - point
+            v2 = next_point - point
+            n1 = float(np.linalg.norm(v1))
+            n2 = float(np.linalg.norm(v2))
+            if n1 < 1e-6 or n2 < 1e-6:
+                continue
+            cos_angle = float(np.dot(v1, v2) / (n1 * n2))
+            cos_angle = max(-1.0, min(1.0, cos_angle))
+            angle = math.acos(cos_angle)
+            sharpness = max(0.0, math.pi - angle)
+            distance = float(np.linalg.norm(point - center))
+            score = distance * (0.35 + sharpness)
+            if score > best_score:
+                best_score = score
+                best_point = point
+        return best_point
 
     def _crop_inner_arrow_mask(self, mask):
         pad_x = max(2, int(mask.shape[1] * 0.08))
@@ -474,8 +956,6 @@ class ArrowDetector:
 
             contour_area = max(1.0, cv2.contourArea(contour))
             rectangularity = contour_area / float(w * h)
-            # The printed border may connect to the arrow after thresholding,
-            # so accept both sparse border contours and denser sign contours.
             if rectangularity < 0.03 or rectangularity > 0.95:
                 continue
 
@@ -515,7 +995,6 @@ class ArrowDetector:
         width = max(24, int(round(max(top_width, bottom_width))))
         height = max(24, int(round(max(left_height, right_height))))
 
-        # Keep the sign's observed aspect ratio while normalizing scale.
         scale = 180.0 / float(max(width, height))
         dst_width = max(40, int(round(width * scale)))
         dst_height = max(40, int(round(height * scale)))
@@ -619,7 +1098,7 @@ class ArrowDetector:
         ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
         best_direction, best_score = ranked[0]
         runner_up = ranked[1][1] if len(ranked) > 1 else 0.0
-        if best_score < 0.34 or (best_score - runner_up) < 0.001:
+        if best_score < 0.34 or (best_score - runner_up) < 0.03:
             return 'unknown', 0.0
         return best_direction, best_score
 
@@ -684,43 +1163,22 @@ class ArrowDetector:
         return 'unknown'
 
     def _angle_from_tip(self, contour, mask, direction: str) -> float:
-        """Compute a continuous arrow angle using direction-guided tip finding.
-
-        Strategy:
-          1. Use the already-classified *direction* to place a reference
-             point at the arrow's **base** (the blunt tail-end of the shaft).
-          2. Find the contour point farthest from that base → this is the
-             arrow **tip** (the pointy end).
-          3. Return atan2(base → tip) as the continuous pointing angle.
-
-        This is robust because no matter how noisy the contour is, the
-        farthest point from the correct base side is always the tip.
-
-        Convention (image coords, y-down, angles via atan2(-dy, dx)):
-          right    ≈  0 rad
-          straight ≈ +π/2  (up in image = forward for robot)
-          left     ≈ ±π
-          back     ≈ -π/2
-        """
         x, y, w, h = cv2.boundingRect(contour)
         if w <= 0 or h <= 0:
             return math.pi / 2.0
 
-        # Place reference at the base side (opposite of arrow tip)
-        _BASE_OFFSETS = {
-            'straight': (x + w / 2.0, y + h),       # bottom-center
-            'back':     (x + w / 2.0, float(y)),     # top-center
-            'left':     (x + float(w), y + h / 2.0), # right-center
-            'right':    (float(x),     y + h / 2.0), # left-center
+        base_offsets = {
+            'straight': (x + w / 2.0, y + h),
+            'back': (x + w / 2.0, float(y)),
+            'left': (x + float(w), y + h / 2.0),
+            'right': (float(x), y + h / 2.0),
         }
-        base = _BASE_OFFSETS.get(direction)
+        base = base_offsets.get(direction)
         if base is None:
-            # unknown direction: fall back to centroid
             moments = cv2.moments(contour)
             if abs(moments['m00']) < 1e-6:
                 return math.pi / 2.0
-            base = (moments['m10'] / moments['m00'],
-                    moments['m01'] / moments['m00'])
+            base = (moments['m10'] / moments['m00'], moments['m01'] / moments['m00'])
 
         base_pt = np.array([[base[0], base[1]]], dtype=np.float32)
         points = contour.reshape(-1, 2).astype(np.float32)
@@ -731,7 +1189,6 @@ class ArrowDetector:
         dy = float(tip[1] - base[1])
         if math.hypot(dx, dy) < 1e-6:
             return math.pi / 2.0
-
         return math.atan2(-dy, dx)
 
     def _stable_direction(self):
@@ -783,3 +1240,27 @@ class ArrowDetector:
         if size % 2 == 0:
             size += 1
         return size
+
+    def _normalize_angle(self, angle: float) -> float:
+        while angle > math.pi:
+            angle -= 2.0 * math.pi
+        while angle < -math.pi:
+            angle += 2.0 * math.pi
+        return angle
+
+    def _heading_debug_line(self, box: Box2D, heading_angle_rad: float):
+        cx, cy = box.center
+        length = max(20.0, min(box.w, box.h) * 0.8)
+
+        dx = math.cos(heading_angle_rad)
+        dy = -math.sin(heading_angle_rad)
+
+        base_x = cx - dx * length * 0.4
+        base_y = cy - dy * length * 0.4
+        tip_x = cx + dx * length * 0.6
+        tip_y = cy + dy * length * 0.6
+
+        return (
+            (int(round(base_x)), int(round(base_y))),
+            (int(round(tip_x)), int(round(tip_y))),
+        )
