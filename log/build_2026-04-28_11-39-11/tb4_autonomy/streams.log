@@ -1,0 +1,80 @@
+[0.425s] Invoking command in '/home/emma/ENPM673_final_project/tb4_autonomy': AMENT_PREFIX_PATH=/home/emma/ENPM673_final_project/install/tb4_sim:${AMENT_PREFIX_PATH} PYTHONPATH=/home/emma/ENPM673_final_project/build/tb4_autonomy/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages:/home/emma/ENPM673_final_project/install/tb4_sim/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../build/tb4_autonomy build --build-base /home/emma/ENPM673_final_project/build/tb4_autonomy/build install --record /home/emma/ENPM673_final_project/build/tb4_autonomy/install.log --single-version-externally-managed install_data
+[0.572s] running egg_info
+[0.573s] creating ../build/tb4_autonomy/tb4_autonomy.egg-info
+[0.573s] writing ../build/tb4_autonomy/tb4_autonomy.egg-info/PKG-INFO
+[0.573s] writing dependency_links to ../build/tb4_autonomy/tb4_autonomy.egg-info/dependency_links.txt
+[0.573s] writing entry points to ../build/tb4_autonomy/tb4_autonomy.egg-info/entry_points.txt
+[0.573s] writing requirements to ../build/tb4_autonomy/tb4_autonomy.egg-info/requires.txt
+[0.573s] writing top-level names to ../build/tb4_autonomy/tb4_autonomy.egg-info/top_level.txt
+[0.573s] writing manifest file '../build/tb4_autonomy/tb4_autonomy.egg-info/SOURCES.txt'
+[0.574s] reading manifest file '../build/tb4_autonomy/tb4_autonomy.egg-info/SOURCES.txt'
+[0.575s] writing manifest file '../build/tb4_autonomy/tb4_autonomy.egg-info/SOURCES.txt'
+[0.575s] running build
+[0.575s] running build_py
+[0.575s] creating /home/emma/ENPM673_final_project/build/tb4_autonomy/build
+[0.575s] creating /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib
+[0.575s] creating /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy
+[0.575s] copying tb4_autonomy/state_machine.py -> /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy
+[0.575s] copying tb4_autonomy/data_types.py -> /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy
+[0.575s] copying tb4_autonomy/vision_controller_node.py -> /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy
+[0.575s] copying tb4_autonomy/motion_controller.py -> /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy
+[0.575s] copying tb4_autonomy/__init__.py -> /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy
+[0.575s] creating /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/utils
+[0.575s] copying tb4_autonomy/utils/image_tools.py -> /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/utils
+[0.575s] copying tb4_autonomy/utils/geometry.py -> /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/utils
+[0.575s] copying tb4_autonomy/utils/__init__.py -> /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/utils
+[0.576s] creating /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/detectors
+[0.576s] copying tb4_autonomy/detectors/arrow_detector.py -> /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/detectors
+[0.576s] copying tb4_autonomy/detectors/logo_detector.py -> /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/detectors
+[0.576s] copying tb4_autonomy/detectors/moving_ball_detector.py -> /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/detectors
+[0.576s] copying tb4_autonomy/detectors/horizon_detector.py -> /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/detectors
+[0.576s] copying tb4_autonomy/detectors/__init__.py -> /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/detectors
+[0.576s] running install
+[0.576s] running install_lib
+[0.576s] creating /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy
+[0.576s] copying /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/state_machine.py -> /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy
+[0.576s] copying /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/data_types.py -> /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy
+[0.576s] copying /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/vision_controller_node.py -> /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy
+[0.576s] creating /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/utils
+[0.576s] copying /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/utils/image_tools.py -> /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/utils
+[0.576s] copying /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/utils/geometry.py -> /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/utils
+[0.577s] copying /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/utils/__init__.py -> /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/utils
+[0.577s] creating /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/detectors
+[0.577s] copying /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/detectors/arrow_detector.py -> /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/detectors
+[0.577s] copying /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/detectors/logo_detector.py -> /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/detectors
+[0.577s] copying /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/detectors/moving_ball_detector.py -> /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/detectors
+[0.577s] copying /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/detectors/horizon_detector.py -> /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/detectors
+[0.577s] copying /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/detectors/__init__.py -> /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/detectors
+[0.577s] copying /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/motion_controller.py -> /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy
+[0.577s] copying /home/emma/ENPM673_final_project/build/tb4_autonomy/build/lib/tb4_autonomy/__init__.py -> /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy
+[0.577s] byte-compiling /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/state_machine.py to state_machine.cpython-310.pyc
+[0.578s] byte-compiling /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/data_types.py to data_types.cpython-310.pyc
+[0.578s] byte-compiling /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/vision_controller_node.py to vision_controller_node.cpython-310.pyc
+[0.579s] byte-compiling /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/utils/image_tools.py to image_tools.cpython-310.pyc
+[0.580s] byte-compiling /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/utils/geometry.py to geometry.cpython-310.pyc
+[0.580s] byte-compiling /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/utils/__init__.py to __init__.cpython-310.pyc
+[0.580s] byte-compiling /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/detectors/arrow_detector.py to arrow_detector.cpython-310.pyc
+[0.584s] byte-compiling /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/detectors/logo_detector.py to logo_detector.cpython-310.pyc
+[0.584s] byte-compiling /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/detectors/moving_ball_detector.py to moving_ball_detector.cpython-310.pyc
+[0.584s] byte-compiling /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/detectors/horizon_detector.py to horizon_detector.cpython-310.pyc
+[0.584s] byte-compiling /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/detectors/__init__.py to __init__.cpython-310.pyc
+[0.584s] byte-compiling /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/motion_controller.py to motion_controller.cpython-310.pyc
+[0.585s] byte-compiling /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/__init__.py to __init__.cpython-310.pyc
+[0.585s] running install_data
+[0.585s] creating /home/emma/ENPM673_final_project/install/tb4_autonomy/share/ament_index
+[0.585s] creating /home/emma/ENPM673_final_project/install/tb4_autonomy/share/ament_index/resource_index
+[0.585s] creating /home/emma/ENPM673_final_project/install/tb4_autonomy/share/ament_index/resource_index/packages
+[0.585s] copying resource/tb4_autonomy -> /home/emma/ENPM673_final_project/install/tb4_autonomy/share/ament_index/resource_index/packages
+[0.585s] copying package.xml -> /home/emma/ENPM673_final_project/install/tb4_autonomy/share/tb4_autonomy
+[0.585s] creating /home/emma/ENPM673_final_project/install/tb4_autonomy/share/tb4_autonomy/launch
+[0.585s] copying launch/autonomy.launch.py -> /home/emma/ENPM673_final_project/install/tb4_autonomy/share/tb4_autonomy/launch
+[0.585s] copying launch/sim_autonomy.launch.py -> /home/emma/ENPM673_final_project/install/tb4_autonomy/share/tb4_autonomy/launch
+[0.585s] creating /home/emma/ENPM673_final_project/install/tb4_autonomy/share/tb4_autonomy/config
+[0.585s] copying config/autonomy.yaml -> /home/emma/ENPM673_final_project/install/tb4_autonomy/share/tb4_autonomy/config
+[0.585s] copying config/rviz.rviz -> /home/emma/ENPM673_final_project/install/tb4_autonomy/share/tb4_autonomy/config
+[0.585s] running install_egg_info
+[0.586s] Copying ../build/tb4_autonomy/tb4_autonomy.egg-info to /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy-0.1.0-py3.10.egg-info
+[0.586s] running install_scripts
+[0.598s] Installing vision_controller_node script to /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/tb4_autonomy
+[0.598s] writing list of installed files to '/home/emma/ENPM673_final_project/build/tb4_autonomy/install.log'
+[0.613s] Invoked command in '/home/emma/ENPM673_final_project/tb4_autonomy' returned '0': AMENT_PREFIX_PATH=/home/emma/ENPM673_final_project/install/tb4_sim:${AMENT_PREFIX_PATH} PYTHONPATH=/home/emma/ENPM673_final_project/build/tb4_autonomy/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages:/home/emma/ENPM673_final_project/install/tb4_sim/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../build/tb4_autonomy build --build-base /home/emma/ENPM673_final_project/build/tb4_autonomy/build install --record /home/emma/ENPM673_final_project/build/tb4_autonomy/install.log --single-version-externally-managed install_data

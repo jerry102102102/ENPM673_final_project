@@ -1,0 +1,49 @@
+running egg_info
+creating ../build/tb4_sim/tb4_sim.egg-info
+writing ../build/tb4_sim/tb4_sim.egg-info/PKG-INFO
+writing dependency_links to ../build/tb4_sim/tb4_sim.egg-info/dependency_links.txt
+writing entry points to ../build/tb4_sim/tb4_sim.egg-info/entry_points.txt
+writing requirements to ../build/tb4_sim/tb4_sim.egg-info/requires.txt
+writing top-level names to ../build/tb4_sim/tb4_sim.egg-info/top_level.txt
+writing manifest file '../build/tb4_sim/tb4_sim.egg-info/SOURCES.txt'
+reading manifest file '../build/tb4_sim/tb4_sim.egg-info/SOURCES.txt'
+writing manifest file '../build/tb4_sim/tb4_sim.egg-info/SOURCES.txt'
+running build
+running build_py
+creating /home/emma/ENPM673_final_project/build/tb4_sim/build
+creating /home/emma/ENPM673_final_project/build/tb4_sim/build/lib
+creating /home/emma/ENPM673_final_project/build/tb4_sim/build/lib/tb4_sim
+copying tb4_sim/__init__.py -> /home/emma/ENPM673_final_project/build/tb4_sim/build/lib/tb4_sim
+running install
+running install_lib
+creating /home/emma/ENPM673_final_project/install/tb4_sim/lib/python3.10/site-packages/tb4_sim
+copying /home/emma/ENPM673_final_project/build/tb4_sim/build/lib/tb4_sim/__init__.py -> /home/emma/ENPM673_final_project/install/tb4_sim/lib/python3.10/site-packages/tb4_sim
+byte-compiling /home/emma/ENPM673_final_project/install/tb4_sim/lib/python3.10/site-packages/tb4_sim/__init__.py to __init__.cpython-310.pyc
+running install_data
+creating /home/emma/ENPM673_final_project/install/tb4_sim/share/ament_index
+creating /home/emma/ENPM673_final_project/install/tb4_sim/share/ament_index/resource_index
+creating /home/emma/ENPM673_final_project/install/tb4_sim/share/ament_index/resource_index/packages
+copying resource/tb4_sim -> /home/emma/ENPM673_final_project/install/tb4_sim/share/ament_index/resource_index/packages
+copying package.xml -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim
+creating /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/launch
+copying launch/tb4_launcher.py -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/launch
+creating /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/resource
+copying resource/tb4_raw.urdf -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/resource
+copying resource/tb4_webots.xacro -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/resource
+copying resource/tb4_control.yaml -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/resource
+copying resource/helper.xacro -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/resource
+creating /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/controllers
+creating /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/controllers/ball_robot
+copying controllers/ball_robot/ball_robot.py -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/controllers/ball_robot
+creating /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/worlds
+copying worlds/house.wbt -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/worlds
+copying worlds/mini_office.wbt -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/worlds
+copying worlds/office.wbt -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/worlds
+creating /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/textures
+copying textures/logo.png -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/textures
+copying textures/arrow_paper.png -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/textures
+copying textures/paper_a4_texture.png -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/textures
+running install_egg_info
+Copying ../build/tb4_sim/tb4_sim.egg-info to /home/emma/ENPM673_final_project/install/tb4_sim/lib/python3.10/site-packages/tb4_sim-0.1.0-py3.10.egg-info
+running install_scripts
+writing list of installed files to '/home/emma/ENPM673_final_project/build/tb4_sim/install.log'

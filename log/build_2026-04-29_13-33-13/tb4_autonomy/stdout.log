@@ -1,0 +1,20 @@
+running egg_info
+writing ../build/tb4_autonomy/tb4_autonomy.egg-info/PKG-INFO
+writing dependency_links to ../build/tb4_autonomy/tb4_autonomy.egg-info/dependency_links.txt
+writing entry points to ../build/tb4_autonomy/tb4_autonomy.egg-info/entry_points.txt
+writing requirements to ../build/tb4_autonomy/tb4_autonomy.egg-info/requires.txt
+writing top-level names to ../build/tb4_autonomy/tb4_autonomy.egg-info/top_level.txt
+reading manifest file '../build/tb4_autonomy/tb4_autonomy.egg-info/SOURCES.txt'
+writing manifest file '../build/tb4_autonomy/tb4_autonomy.egg-info/SOURCES.txt'
+running build
+running build_py
+running install
+running install_lib
+byte-compiling /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy/vision_controller_node.py to vision_controller_node.cpython-310.pyc
+running install_data
+running install_egg_info
+removing '/home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy-0.1.0-py3.10.egg-info' (and everything under it)
+Copying ../build/tb4_autonomy/tb4_autonomy.egg-info to /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages/tb4_autonomy-0.1.0-py3.10.egg-info
+running install_scripts
+Installing vision_controller_node script to /home/emma/ENPM673_final_project/install/tb4_autonomy/lib/tb4_autonomy
+writing list of installed files to '/home/emma/ENPM673_final_project/build/tb4_autonomy/install.log'

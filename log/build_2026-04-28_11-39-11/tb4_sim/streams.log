@@ -1,0 +1,51 @@
+[0.449s] Invoking command in '/home/emma/ENPM673_final_project/src': PYTHONPATH=/home/emma/ENPM673_final_project/build/tb4_sim/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/emma/ENPM673_final_project/install/tb4_sim/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../build/tb4_sim build --build-base /home/emma/ENPM673_final_project/build/tb4_sim/build install --record /home/emma/ENPM673_final_project/build/tb4_sim/install.log --single-version-externally-managed install_data
+[0.625s] running egg_info
+[0.625s] creating ../build/tb4_sim/tb4_sim.egg-info
+[0.625s] writing ../build/tb4_sim/tb4_sim.egg-info/PKG-INFO
+[0.625s] writing dependency_links to ../build/tb4_sim/tb4_sim.egg-info/dependency_links.txt
+[0.625s] writing entry points to ../build/tb4_sim/tb4_sim.egg-info/entry_points.txt
+[0.625s] writing requirements to ../build/tb4_sim/tb4_sim.egg-info/requires.txt
+[0.625s] writing top-level names to ../build/tb4_sim/tb4_sim.egg-info/top_level.txt
+[0.625s] writing manifest file '../build/tb4_sim/tb4_sim.egg-info/SOURCES.txt'
+[0.626s] reading manifest file '../build/tb4_sim/tb4_sim.egg-info/SOURCES.txt'
+[0.627s] writing manifest file '../build/tb4_sim/tb4_sim.egg-info/SOURCES.txt'
+[0.627s] running build
+[0.627s] running build_py
+[0.627s] creating /home/emma/ENPM673_final_project/build/tb4_sim/build
+[0.627s] creating /home/emma/ENPM673_final_project/build/tb4_sim/build/lib
+[0.627s] creating /home/emma/ENPM673_final_project/build/tb4_sim/build/lib/tb4_sim
+[0.627s] copying tb4_sim/__init__.py -> /home/emma/ENPM673_final_project/build/tb4_sim/build/lib/tb4_sim
+[0.627s] running install
+[0.627s] running install_lib
+[0.628s] creating /home/emma/ENPM673_final_project/install/tb4_sim/lib/python3.10/site-packages/tb4_sim
+[0.628s] copying /home/emma/ENPM673_final_project/build/tb4_sim/build/lib/tb4_sim/__init__.py -> /home/emma/ENPM673_final_project/install/tb4_sim/lib/python3.10/site-packages/tb4_sim
+[0.628s] byte-compiling /home/emma/ENPM673_final_project/install/tb4_sim/lib/python3.10/site-packages/tb4_sim/__init__.py to __init__.cpython-310.pyc
+[0.628s] running install_data
+[0.628s] creating /home/emma/ENPM673_final_project/install/tb4_sim/share/ament_index
+[0.628s] creating /home/emma/ENPM673_final_project/install/tb4_sim/share/ament_index/resource_index
+[0.628s] creating /home/emma/ENPM673_final_project/install/tb4_sim/share/ament_index/resource_index/packages
+[0.628s] copying resource/tb4_sim -> /home/emma/ENPM673_final_project/install/tb4_sim/share/ament_index/resource_index/packages
+[0.628s] copying package.xml -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim
+[0.628s] creating /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/launch
+[0.628s] copying launch/tb4_launcher.py -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/launch
+[0.628s] creating /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/resource
+[0.628s] copying resource/tb4_raw.urdf -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/resource
+[0.628s] copying resource/tb4_webots.xacro -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/resource
+[0.628s] copying resource/tb4_control.yaml -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/resource
+[0.628s] copying resource/helper.xacro -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/resource
+[0.628s] creating /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/controllers
+[0.629s] creating /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/controllers/ball_robot
+[0.629s] copying controllers/ball_robot/ball_robot.py -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/controllers/ball_robot
+[0.629s] creating /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/worlds
+[0.629s] copying worlds/house.wbt -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/worlds
+[0.629s] copying worlds/mini_office.wbt -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/worlds
+[0.629s] copying worlds/office.wbt -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/worlds
+[0.629s] creating /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/textures
+[0.629s] copying textures/logo.png -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/textures
+[0.629s] copying textures/arrow_paper.png -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/textures
+[0.629s] copying textures/paper_a4_texture.png -> /home/emma/ENPM673_final_project/install/tb4_sim/share/tb4_sim/textures
+[0.629s] running install_egg_info
+[0.630s] Copying ../build/tb4_sim/tb4_sim.egg-info to /home/emma/ENPM673_final_project/install/tb4_sim/lib/python3.10/site-packages/tb4_sim-0.1.0-py3.10.egg-info
+[0.630s] running install_scripts
+[0.644s] writing list of installed files to '/home/emma/ENPM673_final_project/build/tb4_sim/install.log'
+[0.659s] Invoked command in '/home/emma/ENPM673_final_project/src' returned '0': PYTHONPATH=/home/emma/ENPM673_final_project/build/tb4_sim/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/emma/ENPM673_final_project/install/tb4_sim/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../build/tb4_sim build --build-base /home/emma/ENPM673_final_project/build/tb4_sim/build install --record /home/emma/ENPM673_final_project/build/tb4_sim/install.log --single-version-externally-managed install_data

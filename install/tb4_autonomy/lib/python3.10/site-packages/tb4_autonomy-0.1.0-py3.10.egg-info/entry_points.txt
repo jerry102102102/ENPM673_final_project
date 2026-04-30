@@ -1,0 +1,3 @@
+[console_scripts]
+vision_controller_node = tb4_autonomy.vision_controller_node:main
+

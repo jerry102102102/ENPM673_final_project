@@ -1,0 +1,31 @@
+{
+    "ROS2.distro": "humble",
+    "python.autoComplete.extraPaths": [
+        "/home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages",
+        "/home/emma/ENPM673_final_project/install/tb4_sim/lib/python3.10/site-packages",
+        "/home/emma/project4_ws/install/moveit_task_constructor_core/local/lib/python3.10/dist-packages",
+        "/home/emma/project4_ws/install/moveit_task_constructor_msgs/local/lib/python3.10/dist-packages",
+        "/home/emma/ws_moveit2/install/moveit_task_constructor_core/local/lib/python3.10/dist-packages",
+        "/home/emma/ws_moveit2/install/moveit_py/local/lib/python3.10/dist-packages",
+        "/home/emma/ws_moveit2/install/moveit_configs_utils/lib/python3.10/site-packages",
+        "/home/emma/ws_moveit2/install/srdfdom/local/lib/python3.10/dist-packages",
+        "/home/emma/ws_moveit2/install/moveit_task_constructor_msgs/local/lib/python3.10/dist-packages",
+        "/home/emma/ws_moveit2/install/launch_param_builder/lib/python3.10/site-packages",
+        "/opt/ros/humble/lib/python3.10/site-packages",
+        "/opt/ros/humble/local/lib/python3.10/dist-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/emma/ENPM673_final_project/install/tb4_autonomy/lib/python3.10/site-packages",
+        "/home/emma/ENPM673_final_project/install/tb4_sim/lib/python3.10/site-packages",
+        "/home/emma/project4_ws/install/moveit_task_constructor_core/local/lib/python3.10/dist-packages",
+        "/home/emma/project4_ws/install/moveit_task_constructor_msgs/local/lib/python3.10/dist-packages",
+        "/home/emma/ws_moveit2/install/moveit_task_constructor_core/local/lib/python3.10/dist-packages",
+        "/home/emma/ws_moveit2/install/moveit_py/local/lib/python3.10/dist-packages",
+        "/home/emma/ws_moveit2/install/moveit_configs_utils/lib/python3.10/site-packages",
+        "/home/emma/ws_moveit2/install/srdfdom/local/lib/python3.10/dist-packages",
+        "/home/emma/ws_moveit2/install/moveit_task_constructor_msgs/local/lib/python3.10/dist-packages",
+        "/home/emma/ws_moveit2/install/launch_param_builder/lib/python3.10/site-packages",
+        "/opt/ros/humble/lib/python3.10/site-packages",
+        "/opt/ros/humble/local/lib/python3.10/dist-packages"
+    ]
+}

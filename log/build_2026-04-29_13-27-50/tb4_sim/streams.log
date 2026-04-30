@@ -1,0 +1,20 @@
+[0.411s] Invoking command in '/home/emma/ENPM673_final_project/src': PYTHONPATH=/home/emma/ENPM673_final_project/build/tb4_sim/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/emma/ENPM673_final_project/install/tb4_sim/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../build/tb4_sim build --build-base /home/emma/ENPM673_final_project/build/tb4_sim/build install --record /home/emma/ENPM673_final_project/build/tb4_sim/install.log --single-version-externally-managed install_data
+[0.558s] running egg_info
+[0.559s] writing ../build/tb4_sim/tb4_sim.egg-info/PKG-INFO
+[0.559s] writing dependency_links to ../build/tb4_sim/tb4_sim.egg-info/dependency_links.txt
+[0.559s] writing entry points to ../build/tb4_sim/tb4_sim.egg-info/entry_points.txt
+[0.559s] writing requirements to ../build/tb4_sim/tb4_sim.egg-info/requires.txt
+[0.559s] writing top-level names to ../build/tb4_sim/tb4_sim.egg-info/top_level.txt
+[0.560s] reading manifest file '../build/tb4_sim/tb4_sim.egg-info/SOURCES.txt'
+[0.560s] writing manifest file '../build/tb4_sim/tb4_sim.egg-info/SOURCES.txt'
+[0.561s] running build
+[0.561s] running build_py
+[0.561s] running install
+[0.561s] running install_lib
+[0.561s] running install_data
+[0.561s] running install_egg_info
+[0.562s] removing '/home/emma/ENPM673_final_project/install/tb4_sim/lib/python3.10/site-packages/tb4_sim-0.1.0-py3.10.egg-info' (and everything under it)
+[0.562s] Copying ../build/tb4_sim/tb4_sim.egg-info to /home/emma/ENPM673_final_project/install/tb4_sim/lib/python3.10/site-packages/tb4_sim-0.1.0-py3.10.egg-info
+[0.563s] running install_scripts
+[0.575s] writing list of installed files to '/home/emma/ENPM673_final_project/build/tb4_sim/install.log'
+[0.588s] Invoked command in '/home/emma/ENPM673_final_project/src' returned '0': PYTHONPATH=/home/emma/ENPM673_final_project/build/tb4_sim/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/emma/ENPM673_final_project/install/tb4_sim/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../build/tb4_sim build --build-base /home/emma/ENPM673_final_project/build/tb4_sim/build install --record /home/emma/ENPM673_final_project/build/tb4_sim/install.log --single-version-externally-managed install_data
