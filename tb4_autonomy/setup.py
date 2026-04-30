@@ -25,7 +25,9 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'camera_recorder_node = tb4_autonomy.camera_recorder_node:main',
             'vision_controller_node = tb4_autonomy.vision_controller_node:main',
+            'waypoint_driver_node = tb4_autonomy.waypoint_driver_node:main',
         ],
     },
 )

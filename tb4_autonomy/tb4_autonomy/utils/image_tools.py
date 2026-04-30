@@ -42,9 +42,12 @@ def draw_detections(image, results: DetectionResults) -> None:
         cv2.line(image, results.horizon.p1, results.horizon.p2, CYAN, 2)
 
     if results.arrow is not None:
-        label = f'ARROW {results.arrow.direction.upper()}'
-        if results.arrow.direction == 'unknown' and results.arrow.raw_direction != 'unknown':
-            label = f'ARROW raw={results.arrow.raw_direction.upper()}'
+        if results.arrow.heading_valid and results.arrow.heading_angle_deg is not None:
+            label = f'ARROW heading={results.arrow.heading_angle_deg:.0f}deg'
+        else:
+            label = f'ARROW {results.arrow.direction.upper()}'
+            if results.arrow.direction == 'unknown' and results.arrow.raw_direction != 'unknown':
+                label = f'ARROW raw={results.arrow.raw_direction.upper()}'
         if results.arrow.corners is not None and len(results.arrow.corners) == 4:
             points = np.array(results.arrow.corners, dtype=np.int32).reshape((-1, 1, 2))
             cv2.polylines(image, [points], isClosed=True, color=GREEN, thickness=2)
@@ -53,6 +56,41 @@ def draw_detections(image, results: DetectionResults) -> None:
             draw_label(image, label, (x, max(20, y - 8)), GREEN)
         else:
             draw_box(image, results.arrow.box, GREEN, label)
+        if results.arrow.heading_base is not None and results.arrow.heading_tip is not None:
+            cv2.arrowedLine(
+                image,
+                tuple(int(value) for value in results.arrow.heading_base),
+                tuple(int(value) for value in results.arrow.heading_tip),
+                CYAN,
+                3,
+                tipLength=0.35,
+            )
+            draw_label(
+                image,
+                f'heading: {results.arrow.heading_source}',
+                tuple(int(value) for value in results.arrow.heading_tip),
+                CYAN,
+            )
+        if results.arrow.heading_valid:
+            center = results.arrow.box.center
+            cv2.circle(image, (int(round(center[0])), int(round(center[1]))), 5, YELLOW, -1)
+            if results.arrow.heading_angle_deg is not None:
+                draw_label(
+                    image,
+                    f'heading={results.arrow.heading_angle_deg:.1f}deg exist={results.arrow.arrow_presence_confidence:.2f}',
+                    (int(round(center[0])), int(round(center[1] + 24))),
+                    CYAN,
+                )
+        if results.arrow.paper_axis_angle_rad is not None:
+            center = results.arrow.box.center
+            angle = results.arrow.paper_heading_angle_rad or results.arrow.paper_axis_angle_rad
+            length = max(24.0, min(results.arrow.box.w, results.arrow.box.h) * 0.45)
+            dx = np.cos(angle)
+            dy = -np.sin(angle)
+            base = (int(round(center[0] - dx * length * 0.5)), int(round(center[1] - dy * length * 0.5)))
+            tip = (int(round(center[0] + dx * length * 0.5)), int(round(center[1] + dy * length * 0.5)))
+            cv2.arrowedLine(image, base, tip, YELLOW, 2, tipLength=0.35)
+            draw_label(image, 'paper debug-only', tip, YELLOW)
 
     if results.logo is not None:
         draw_box(image, results.logo.box, RED, 'UMD LOGO')

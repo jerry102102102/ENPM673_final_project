@@ -6,14 +6,21 @@ import os
 
 from tb4_autonomy.data_types import LogoDetection, Box2D   # Assuming these are defined in tb4_autonomy.data_types
 
+try:
+    from ament_index_python.packages import get_package_share_directory, PackageNotFoundError
+except ModuleNotFoundError:
+    get_package_share_directory = None
+
+    class PackageNotFoundError(Exception):
+        pass
+
 class LogoDetector:
     name = 'logo'   # Unique name for this detector
 
-    def __init__(self):
+    def __init__(self, detect_threshold: int = 5):
         self.orb = cv2.ORB_create(nfeatures=800)   # Increase number of features to improve detection robustness
 
-        current_dir = os.path.dirname(os.path.abspath(__file__))   # Get the directory of the current file
-        ref_path = os.path.join(current_dir, "../../../src/textures/logo.png")   # Construct the path to the logo image
+        ref_path = self._find_reference_logo_path()
 
         self.ref_img = cv2.imread(ref_path, 0)   # Load the logo image in grayscale
         if self.ref_img is None: 
@@ -24,10 +31,29 @@ class LogoDetector:
         self.bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)   # Use Brute-Force matcher with Hamming distance for ORB descriptors
 
         self.detect_count = 0   # Counter to keep track of consecutive detections
-        self.detect_threshold = 5   # Number of consecutive detections required to confirm the presence of the logo
+        self.detect_threshold = max(1, int(detect_threshold))   # Number of consecutive detections required to confirm the presence of the logo
 
         self.min_matches = 15   # Minimum number of good matches required to consider a detection valid
         self.ratio_thresh = 0.75   # Lowe's ratio test threshold to filter out false matches
+
+    def _find_reference_logo_path(self):
+        candidates = []
+        if get_package_share_directory is not None:
+            try:
+                candidates.append(os.path.join(get_package_share_directory('tb4_sim'), 'textures', 'logo.png'))
+            except PackageNotFoundError:
+                pass
+
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        candidates.extend([
+            os.path.abspath(os.path.join(current_dir, '../../../../src/textures/logo.png')),
+            os.path.abspath(os.path.join(os.getcwd(), 'src/textures/logo.png')),
+        ])
+
+        for path in candidates:
+            if os.path.exists(path):
+                return path
+        raise RuntimeError(f"Failed to find logo.png. Checked: {candidates}")
 
     def detect(self, frame, context):   # Main detection method that takes a video frame and context (not used in this implementation)
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)   # Convert the input frame to grayscale for feature detection
@@ -41,7 +67,10 @@ class LogoDetector:
         matches = self.bf.knnMatch(self.des_ref, des_frame, k=2)   # Find the two nearest matches for each descriptor in the reference image
 
         good_matches = []   # Filter matches using Lowe's ratio test to retain only good matches
-        for m, n in matches:   # m is the best match, n is the second-best match
+        for pair in matches:
+            if len(pair) < 2:
+                continue
+            m, n = pair   # m is the best match, n is the second-best match
             if m.distance < self.ratio_thresh * n.distance:   # If the best match is significantly better than the second-best match, consider it a good match
                 good_matches.append(m)
 
@@ -63,6 +92,7 @@ class LogoDetector:
                 if self.detect_count >= self.detect_threshold:   # If the logo has been detected in enough consecutive frames, return a LogoDetection object with the bounding box and confidence
                     box = Box2D(x, y, bw, bh)   # Create a Box2D object with the coordinates and dimensions of the bounding box
                     return LogoDetection(box=box, confidence=len(good_matches))   # Return a LogoDetection object with the bounding box and confidence based on the number of good matches
+                return None
 
         self.detect_count = 0
         return None
