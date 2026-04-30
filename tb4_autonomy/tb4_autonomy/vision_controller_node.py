@@ -314,9 +314,6 @@ class VisionControllerNode(Node):
         now_sec = self.get_clock().now().nanoseconds * 1e-9
         state = self.arrow_controller.state
 
-        if self.latest_results.logo is None and self.logo_stop_until is None:
-            self.logo_armed = True
-
         if self.latest_results.has_moving_ball:
             twist = Twist()
             state = AutonomyState.BALL_STOP
