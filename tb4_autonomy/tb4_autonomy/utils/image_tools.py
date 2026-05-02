@@ -40,6 +40,14 @@ def draw_status(image, lines: list[str]) -> None:
 def draw_detections(image, results: DetectionResults) -> None:
     if results.horizon is not None:
         cv2.line(image, results.horizon.p1, results.horizon.p2, CYAN, 2)
+        mid_x = (results.horizon.p1[0] + results.horizon.p2[0]) // 2
+        mid_y = (results.horizon.p1[1] + results.horizon.p2[1]) // 2
+        draw_label(
+            image,
+            f'HORIZON conf={results.horizon.confidence:.2f}',
+            (mid_x - 80, max(20, mid_y - 10)),
+            CYAN,
+        )
 
     if results.arrow is not None:
         if results.arrow.heading_valid and results.arrow.heading_angle_deg is not None:
