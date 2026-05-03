@@ -21,8 +21,7 @@ from tb4_autonomy.detectors.logo_detector import LogoDetector
 from tb4_autonomy.detectors.moving_ball_detector import MovingBallDetector
 from tb4_autonomy.utils.geometry import yaw_from_quaternion
 from tb4_autonomy.utils.image_tools import draw_detections, draw_status
-
-
+from tb4_autonomy.detectors.static_ball_detector import StaticObstacleDetector
 class VisionControllerNode(Node):
     def __init__(self):
         super().__init__('vision_controller_node')
@@ -192,6 +191,7 @@ class VisionControllerNode(Node):
             'arrow': ArrowDetector(arrow_config),
             'logo': LogoDetector(detect_threshold=self.logo_confirm_frames),
             'moving_ball': MovingBallDetector(),
+            'static_ball': StaticObstacleDetector(),
             'horizon': HorizonDetector(self.horizon_ratio),
         }
 
@@ -272,6 +272,8 @@ class VisionControllerNode(Node):
                 results.moving_ball = result
             elif name == 'horizon':
                 results.horizon = result
+            elif name == 'static_ball':
+                results.moving_ball = result
 
         results.timings_ms = timings_ms
         self.latest_results = results
