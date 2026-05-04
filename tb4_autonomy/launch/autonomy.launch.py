@@ -38,6 +38,11 @@ def generate_launch_description():
             default_value='false',
             description='Start RViz with the project debug layout.',
         ),
+        DeclareLaunchArgument(
+            'rviz_config',
+            default_value=default_rviz,
+            description='RViz config file to load when use_rviz is true.',
+        ),
         Node(
             package='tb4_autonomy',
             executable='vision_controller_node',
@@ -64,7 +69,7 @@ def generate_launch_description():
             executable='rviz2',
             name='rviz2',
             output='screen',
-            arguments=['-d', default_rviz],
+            arguments=['-d', LaunchConfiguration('rviz_config')],
             condition=IfCondition(LaunchConfiguration('use_rviz')),
         ),
     ])
