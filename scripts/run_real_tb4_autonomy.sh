@@ -259,10 +259,10 @@ if [[ -n "$image_topic_override" ]]; then
   image_topic="$image_topic_override"
 else
   image_topic="$(first_existing_topic \
-    "$ns/oakd/rgb/preview/image_raw/compressed" \
-    "$ns/oakd/rgb/image_raw/compressed" \
     "$ns/oakd/rgb/preview/image_raw" \
     "$ns/oakd/rgb/image_raw" \
+    "$ns/oakd/rgb/preview/image_raw/compressed" \
+    "$ns/oakd/rgb/image_raw/compressed" \
     "$ns/oakd/rgb/preview/image_color" \
     "$ns/camera/image_raw/image_color" \
     "$ns/camera/image_raw" \
