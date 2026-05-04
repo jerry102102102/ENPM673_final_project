@@ -12,10 +12,10 @@ It does not ping, restart ros2 daemon, reset odom, or wait for topics.
 Options:
   --dry-run=true|false       Publish zero cmd_vel while running perception. Default: false
   --use-rviz=true|false      Launch RViz with debug image. Default: true
-  --image-topic=/topic       Camera image topic. Default: /<robot>/oakd/rgb/image_raw/compressed
+  --image-topic=/topic       Camera image topic. Default: /<robot>/oakd/rgb/preview/image_raw
   --image-is-compressed=true|false
-                             Whether image topic is sensor_msgs/CompressedImage. Default: true
-  --camera-info-topic=/topic Camera info topic. Default: /<robot>/oakd/rgb/camera_info
+                             Whether image topic is sensor_msgs/CompressedImage. Default: false
+  --camera-info-topic=/topic Camera info topic. Default: /<robot>/oakd/rgb/preview/camera_info
   --odom-topic=/topic        Odom topic. Default: /<robot>/odom
   --cmd-vel-topic=/topic     Cmd vel topic. Default: /<robot>/cmd_vel
   --scan-topic=/topic        Scan topic. Default: /<robot>/scan
@@ -67,10 +67,10 @@ esac
 ns="/$robot"
 dry_run=false
 use_rviz=true
-image_topic="$ns/oakd/rgb/image_raw/compressed"
-image_is_compressed=true
+image_topic="$ns/oakd/rgb/preview/image_raw"
+image_is_compressed=false
 image_is_compressed_override=""
-camera_info_topic="$ns/oakd/rgb/camera_info"
+camera_info_topic="$ns/oakd/rgb/preview/camera_info"
 odom_topic="$ns/odom"
 cmd_vel_topic="$ns/cmd_vel"
 scan_topic="$ns/scan"
