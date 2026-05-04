@@ -4,6 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
+  scripts/run_real_tb4_autonomy.sh tb4_1 [options]
   scripts/run_real_tb4_autonomy.sh tb4_2 [options]
   scripts/run_real_tb4_autonomy.sh tb4_5 [options]
 
@@ -24,6 +25,18 @@ EOF
 fail() {
   echo "[ERROR] $*" >&2
   exit 1
+}
+
+source_ros_setup() {
+  local setup_file="$1"
+  [[ -f "$setup_file" ]] || fail "Missing $setup_file"
+
+  # ROS setup files can reference unset AMENT_* variables. Temporarily disable
+  # nounset so `set -u` in this wrapper does not break Humble setup sourcing.
+  set +u
+  # shellcheck source=/dev/null
+  source "$setup_file"
+  set -u
 }
 
 warn() {
@@ -85,6 +98,10 @@ robot="$1"
 shift
 
 case "$robot" in
+  tb4_1)
+    robot_ip="192.168.50.61"
+    discovery_server="192.168.50.61:11811;"
+    ;;
   tb4_2)
     robot_ip="192.168.50.62"
     discovery_server=";192.168.50.62:11811;"
@@ -95,7 +112,7 @@ case "$robot" in
     ;;
   *)
     usage
-    fail "Unknown robot '$robot'. Expected tb4_2 or tb4_5."
+    fail "Unknown robot '$robot'. Expected tb4_1, tb4_2, or tb4_5."
     ;;
 esac
 
@@ -133,11 +150,10 @@ info "ROS_DISCOVERY_SERVER=$ROS_DISCOVERY_SERVER"
 info "Checking Wi-Fi reachability with ping..."
 ping -c 2 -W 2 "$robot_ip" >/dev/null || fail "Cannot ping $robot_ip. Check Wi-Fi RAL_robots and robot power."
 
-[[ -f /opt/ros/humble/setup.bash ]] || fail "Missing /opt/ros/humble/setup.bash"
-source /opt/ros/humble/setup.bash
+source_ros_setup /opt/ros/humble/setup.bash
 
 [[ -f install/setup.bash ]] || fail "Missing install/setup.bash. Run: colcon build --symlink-install"
-source install/setup.bash
+source_ros_setup install/setup.bash
 
 info "Restarting ROS daemon..."
 ros2 daemon stop >/dev/null 2>&1 || true
