@@ -91,6 +91,7 @@ class BallDetection:
     moving: bool = False
     ttc: float | None = None
     confidence: float = 0.0
+    mask_debug_image: object = None
 
 
 @dataclass

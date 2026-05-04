@@ -30,6 +30,30 @@ def draw_box(image, box, color, label: str | None = None) -> None:
         draw_label(image, label, (p1[0], max(20, p1[1] - 8)), color)
 
 
+def draw_debug_thumbnail(
+    image,
+    debug_image,
+    title: str,
+    origin: tuple[int, int],
+    size: tuple[int, int] = (180, 100),
+) -> None:
+    if debug_image is None:
+        return
+
+    x, y = origin
+    width, height = size
+    if y + height > image.shape[0] or x + width > image.shape[1]:
+        return
+
+    thumb = debug_image
+    if len(thumb.shape) == 2:
+        thumb = cv2.cvtColor(thumb, cv2.COLOR_GRAY2BGR)
+    thumb = cv2.resize(thumb, (width, height), interpolation=cv2.INTER_AREA)
+    image[y:y + height, x:x + width] = thumb
+    cv2.rectangle(image, (x, y), (x + width, y + height), YELLOW, 2)
+    draw_label(image, title, (x, max(20, y - 8)), YELLOW)
+
+
 def draw_status(image, lines: list[str]) -> None:
     y = 26
     for line in lines:
@@ -100,3 +124,9 @@ def draw_detections(image, results: DetectionResults) -> None:
         if results.moving_ball.ttc is not None:
             label = f'MOVING TTC={results.moving_ball.ttc:.1f}s'
         draw_box(image, results.moving_ball.box, YELLOW, label)
+        draw_debug_thumbnail(
+            image,
+            results.moving_ball.mask_debug_image,
+            'BALL HSV MASK',
+            (image.shape[1] - 192, image.shape[0] - 112),
+        )

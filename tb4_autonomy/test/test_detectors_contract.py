@@ -6,6 +6,7 @@ from tb4_autonomy.data_types import (
     BallDetection,
     Box2D,
     DetectionResults,
+    FrameContext,
     LogoDetection,
 )
 from tb4_autonomy.detectors.arrow_detector import ArrowDetector, ArrowDetectorConfig
@@ -48,6 +49,32 @@ def test_overlay_draws_all_result_types_without_crashing():
 
     draw_detections(frame, results)
     assert int(frame.sum()) > 0
+
+
+def test_moving_ball_stop_hold_expires_when_ball_becomes_static():
+    detector = MovingBallDetector()
+
+    first = detector.detect(
+        _synthetic_orange_ball_frame(cx=60),
+        FrameContext(stamp_sec=0.0, odom_linear_x=0.05),
+    )
+    second = detector.detect(
+        _synthetic_orange_ball_frame(cx=80),
+        FrameContext(stamp_sec=0.1, odom_linear_x=0.05),
+    )
+    held = detector.detect(
+        _synthetic_orange_ball_frame(cx=80),
+        FrameContext(stamp_sec=0.2, odom_linear_x=0.05),
+    )
+    expired = detector.detect(
+        _synthetic_orange_ball_frame(cx=80),
+        FrameContext(stamp_sec=2.0, odom_linear_x=0.05),
+    )
+
+    assert first is not None and first.moving
+    assert second is not None and second.moving
+    assert held is not None and held.moving
+    assert expired is None
 
 
 def test_arrow_detector_classifies_clear_synthetic_arrows():
@@ -101,6 +128,12 @@ def _synthetic_arrow_scene(direction: str):
     points = _arrow_polygon(direction)
     cv2.fillPoly(sign, [np.array(points, dtype=np.int32)], (0, 0, 0))
     frame[100:400, 100:400] = sign
+    return frame
+
+
+def _synthetic_orange_ball_frame(cx: int):
+    frame = np.zeros((120, 200, 3), dtype=np.uint8)
+    cv2.circle(frame, (cx, 75), 18, (0, 128, 255), -1)
     return frame
 
 
