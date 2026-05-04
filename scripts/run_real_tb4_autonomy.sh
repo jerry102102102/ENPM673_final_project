@@ -145,7 +145,8 @@ ros2 daemon start >/dev/null
 
 TOPIC_LIST_FILE="$(mktemp)"
 TOPIC_ERROR_FILE="$(mktemp)"
-trap 'rm -f "$TOPIC_LIST_FILE" "$TOPIC_ERROR_FILE"' EXIT
+RVIZ_CONFIG_FILE=""
+trap 'rm -f "$TOPIC_LIST_FILE" "$TOPIC_ERROR_FILE" "$RVIZ_CONFIG_FILE"' EXIT
 
 wait_for_topic_list || fail "ROS discovery failed. Check ROS env vars, discovery server, and robot network."
 
@@ -157,6 +158,14 @@ reset_service="$ns/reset_pose"
 state_topic="$ns/autonomy/state"
 perf_topic="$ns/autonomy/perf"
 debug_image_topic="$ns/debug/annotated_image"
+
+if [[ "$use_rviz" == true ]]; then
+  default_rviz_config="$repo_root/tb4_autonomy/config/rviz.rviz"
+  [[ -f "$default_rviz_config" ]] || fail "Missing RViz config $default_rviz_config"
+  RVIZ_CONFIG_FILE="$(mktemp --suffix=_${robot}_rviz.rviz)"
+  sed "s#Value: /debug/annotated_image#Value: $debug_image_topic#g" \
+    "$default_rviz_config" > "$RVIZ_CONFIG_FILE"
+fi
 
 topic_exists "$odom_topic" || fail "Missing odom topic $odom_topic. Check namespace and discovery server."
 topic_exists "$cmd_vel_topic" || fail "Missing cmd_vel topic $cmd_vel_topic. Check namespace and discovery server."
@@ -235,5 +244,6 @@ exec ros2 launch tb4_autonomy autonomy.launch.py \
   cmd_vel_topic:="$cmd_vel_topic" \
   cmd_vel_stamped:="$cmd_vel_stamped" \
   annotated_image_topic:="$debug_image_topic" \
+  rviz_config:="${RVIZ_CONFIG_FILE:-$repo_root/tb4_autonomy/config/rviz.rviz}" \
   state_topic:="$state_topic" \
   perf_topic:="$perf_topic"
