@@ -6,11 +6,13 @@ import time
 from cv_bridge import CvBridge
 from geometry_msgs.msg import Twist, TwistStamped
 from nav_msgs.msg import Odometry
+import cv2
+import numpy as np
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import CameraInfo, Image, LaserScan
+from sensor_msgs.msg import CameraInfo, CompressedImage, Image, LaserScan
 from std_msgs.msg import String
 
 from tb4_autonomy.arrow_smooth_arc_controller import ArrowSmoothArcConfig, ArrowSmoothArcController
@@ -28,15 +30,16 @@ class VisionControllerNode(Node):
         super().__init__('vision_controller_node')
 
         self.image_topic = self._declare('image_topic', '/camera/image_raw/image_color')
+        self.image_is_compressed = self._declare_bool('image_is_compressed', False)
         self.camera_info_topic = self._declare('camera_info_topic', '/camera/image_raw/camera_info')
         self.odom_topic = self._declare('odom_topic', '/odom')
         self.scan_topic = self._declare('scan_topic', '/scan')
         self.cmd_vel_topic = self._declare('cmd_vel_topic', '/cmd_vel')
-        self.cmd_vel_stamped = bool(self._declare('cmd_vel_stamped', False))
+        self.cmd_vel_stamped = self._declare_bool('cmd_vel_stamped', False)
         self.annotated_image_topic = self._declare('annotated_image_topic', '/debug/annotated_image')
         self.state_topic = self._declare('state_topic', '/autonomy/state')
         self.perf_topic = self._declare('perf_topic', '/autonomy/perf')
-        self.dry_run = bool(self._declare('dry_run', True))
+        self.dry_run = self._declare_bool('dry_run', True)
         self.control_rate_hz = float(self._declare('control_rate_hz', 20.0))
         self.horizon_ratio = float(self._declare('horizon_ratio', 0.5))
 
@@ -74,7 +77,7 @@ class VisionControllerNode(Node):
             floor_roi_min_y_ratio=float(self._declare('arrow_floor_roi_min_y_ratio', 0.45)),
             candidate_max_center_error_ratio=float(self._declare('arrow_candidate_max_center_error_ratio', 0.40)),
             min_candidate_bottom_ratio=float(self._declare('arrow_min_candidate_bottom_ratio', 0.45)),
-            reject_back_direction=bool(self._declare('arrow_reject_back_direction', True)),
+            reject_back_direction=self._declare_bool('arrow_reject_back_direction', True),
             max_valid_bbox_width_ratio=float(self._declare('arrow_max_valid_bbox_width_ratio', 0.70)),
             max_valid_bbox_height_ratio=float(self._declare('arrow_max_valid_bbox_height_ratio', 0.70)),
             max_valid_final_area_ratio=float(self._declare('arrow_max_valid_final_area_ratio', 0.16)),
@@ -83,11 +86,11 @@ class VisionControllerNode(Node):
             max_valid_paper_aspect_ratio=float(self._declare('arrow_max_valid_paper_aspect_ratio', 4.0)),
             min_valid_paper_aspect_ratio=float(self._declare('arrow_min_valid_paper_aspect_ratio', 0.25)),
             min_history_confidence=float(self._declare('arrow_min_history_confidence', 0.45)),
-            use_axis_direction=bool(self._declare('arrow_use_axis_direction', False)),
-            use_paper_orientation_heading=bool(self._declare('arrow_use_paper_orientation_heading', False)),
+            use_axis_direction=self._declare_bool('arrow_use_axis_direction', False),
+            use_paper_orientation_heading=self._declare_bool('arrow_use_paper_orientation_heading', False),
             paper_heading_forward_angle_rad=float(self._declare('arrow_paper_heading_forward_angle_rad', 1.57079632679)),
-            paper_heading_use_previous_when_ambiguous=bool(
-                self._declare('arrow_paper_heading_use_previous_when_ambiguous', True)
+            paper_heading_use_previous_when_ambiguous=self._declare_bool(
+                'arrow_paper_heading_use_previous_when_ambiguous', True
             ),
             paper_heading_ambiguity_margin_rad=float(
                 self._declare('arrow_paper_heading_ambiguity_margin_rad', 0.20)
@@ -181,7 +184,7 @@ class VisionControllerNode(Node):
                 self._declare('arrow_smooth_arc_controller.finish_center_tolerance_px', 45.0)
             ),
             min_track_time_sec=float(self._declare('arrow_smooth_arc_controller.min_track_time_sec', 0.8)),
-            debug_log=bool(self._declare('arrow_smooth_arc_controller.debug_log', True)),
+            debug_log=self._declare_bool('arrow_smooth_arc_controller.debug_log', True),
         )
 
         self.bridge = CvBridge()
@@ -210,7 +213,8 @@ class VisionControllerNode(Node):
         self.state_pub = self.create_publisher(String, self.state_topic, 10)
         self.perf_pub = self.create_publisher(String, self.perf_topic, 10)
 
-        self.create_subscription(Image, self.image_topic, self.image_callback, qos_profile_sensor_data)
+        image_msg_type = CompressedImage if self.image_is_compressed else Image
+        self.create_subscription(image_msg_type, self.image_topic, self.image_callback, qos_profile_sensor_data)
         self.create_subscription(CameraInfo, self.camera_info_topic, self.camera_info_callback, qos_profile_sensor_data)
         self.create_subscription(Odometry, self.odom_topic, self.odom_callback, 10)
         self.create_subscription(LaserScan, self.scan_topic, self.scan_callback, qos_profile_sensor_data)
@@ -219,12 +223,19 @@ class VisionControllerNode(Node):
         self.create_timer(timer_period, self.control_timer_callback)
 
         self.get_logger().info(
-            f'vision_controller_node started image={self.image_topic} dry_run={self.dry_run}'
+            f'vision_controller_node started image={self.image_topic} '
+            f'compressed={self.image_is_compressed} dry_run={self.dry_run}'
         )
 
     def _declare(self, name: str, default):
         self.declare_parameter(name, default)
         return self.get_parameter(name).value
+
+    def _declare_bool(self, name: str, default: bool) -> bool:
+        value = self._declare(name, default)
+        if isinstance(value, str):
+            return value.strip().lower() in {'1', 'true', 'yes', 'y', 'on'}
+        return bool(value)
 
     def camera_info_callback(self, msg: CameraInfo) -> None:
         self.latest_camera_info = msg
@@ -236,10 +247,10 @@ class VisionControllerNode(Node):
         self.latest_yaw = yaw_from_quaternion(msg.pose.pose.orientation)
         self.latest_odom_linear_x = msg.twist.twist.linear.x
 
-    def image_callback(self, msg: Image) -> None:
+    def image_callback(self, msg: Image | CompressedImage) -> None:
         start = time.perf_counter()
         try:
-            frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+            frame = self._message_to_bgr_frame(msg)
         except Exception as exc:
             self.get_logger().warning(f'failed to convert image: {exc}')
             return
@@ -311,6 +322,15 @@ class VisionControllerNode(Node):
         timing_parts = [f'{key}={value:.1f}ms' for key, value in timings_ms.items()]
         perf.data = f'frame={self.latest_frame_ms:.1f}ms ' + ' '.join(timing_parts)
         self.perf_pub.publish(perf)
+
+    def _message_to_bgr_frame(self, msg: Image | CompressedImage):
+        if self.image_is_compressed:
+            np_arr = np.frombuffer(msg.data, np.uint8)
+            frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            if frame is None:
+                raise ValueError('cv2.imdecode returned None for compressed image')
+            return frame
+        return self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
 
     def control_timer_callback(self) -> None:
         now_sec = self.get_clock().now().nanoseconds * 1e-9

@@ -12,7 +12,9 @@ It does not ping, restart ros2 daemon, reset odom, or wait for topics.
 Options:
   --dry-run=true|false       Publish zero cmd_vel while running perception. Default: false
   --use-rviz=true|false      Launch RViz with debug image. Default: true
-  --image-topic=/topic       Camera image topic. Default: /<robot>/oakd/rgb/image_raw
+  --image-topic=/topic       Camera image topic. Default: /<robot>/oakd/rgb/image_raw/compressed
+  --image-is-compressed=true|false
+                             Whether image topic is sensor_msgs/CompressedImage. Default: true
   --camera-info-topic=/topic Camera info topic. Default: /<robot>/oakd/rgb/camera_info
   --odom-topic=/topic        Odom topic. Default: /<robot>/odom
   --cmd-vel-topic=/topic     Cmd vel topic. Default: /<robot>/cmd_vel
@@ -65,7 +67,9 @@ esac
 ns="/$robot"
 dry_run=false
 use_rviz=true
-image_topic="$ns/oakd/rgb/image_raw"
+image_topic="$ns/oakd/rgb/image_raw/compressed"
+image_is_compressed=true
+image_is_compressed_override=""
 camera_info_topic="$ns/oakd/rgb/camera_info"
 odom_topic="$ns/odom"
 cmd_vel_topic="$ns/cmd_vel"
@@ -79,6 +83,7 @@ for arg in "$@"; do
     --dry-run=*) dry_run="$(bool_value "${arg#*=}")" ;;
     --use-rviz=*) use_rviz="$(bool_value "${arg#*=}")" ;;
     --image-topic=*) image_topic="${arg#*=}" ;;
+    --image-is-compressed=*) image_is_compressed_override="$(bool_value "${arg#*=}")" ;;
     --camera-info-topic=*) camera_info_topic="${arg#*=}" ;;
     --odom-topic=*) odom_topic="${arg#*=}" ;;
     --cmd-vel-topic=*) cmd_vel_topic="${arg#*=}" ;;
@@ -87,6 +92,14 @@ for arg in "$@"; do
     *) fail "Unknown option '$arg'" ;;
   esac
 done
+
+if [[ -n "$image_is_compressed_override" ]]; then
+  image_is_compressed="$image_is_compressed_override"
+elif [[ "$image_topic" == */compressed ]]; then
+  image_is_compressed=true
+else
+  image_is_compressed=false
+fi
 
 cd "$repo_root"
 
@@ -115,6 +128,7 @@ fi
 
 echo "[INFO] Starting autonomy directly with:"
 echo "[INFO]   image_topic=$image_topic"
+echo "[INFO]   image_is_compressed=$image_is_compressed"
 echo "[INFO]   camera_info_topic=$camera_info_topic"
 echo "[INFO]   odom_topic=$odom_topic"
 echo "[INFO]   scan_topic=$scan_topic"
@@ -125,6 +139,7 @@ exec ros2 launch tb4_autonomy autonomy.launch.py \
   dry_run:="$dry_run" \
   use_rviz:="$use_rviz" \
   image_topic:="$image_topic" \
+  image_is_compressed:="$image_is_compressed" \
   camera_info_topic:="$camera_info_topic" \
   odom_topic:="$odom_topic" \
   scan_topic:="$scan_topic" \

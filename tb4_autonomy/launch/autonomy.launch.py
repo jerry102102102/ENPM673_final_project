@@ -25,6 +25,7 @@ def generate_launch_description():
             description='When true, publish zero cmd_vel while keeping all monitoring active.',
         ),
         DeclareLaunchArgument('image_topic', default_value='/camera/image_raw/image_color'),
+        DeclareLaunchArgument('image_is_compressed', default_value='false'),
         DeclareLaunchArgument('camera_info_topic', default_value='/camera/image_raw/camera_info'),
         DeclareLaunchArgument('odom_topic', default_value='/odom'),
         DeclareLaunchArgument('scan_topic', default_value='/scan'),
@@ -53,6 +54,7 @@ def generate_launch_description():
                 {
                     'dry_run': LaunchConfiguration('dry_run'),
                     'image_topic': LaunchConfiguration('image_topic'),
+                    'image_is_compressed': LaunchConfiguration('image_is_compressed'),
                     'camera_info_topic': LaunchConfiguration('camera_info_topic'),
                     'odom_topic': LaunchConfiguration('odom_topic'),
                     'scan_topic': LaunchConfiguration('scan_topic'),

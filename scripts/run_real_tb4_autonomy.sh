@@ -15,6 +15,9 @@ Options:
   --reset-odom=true|false       Call /<robot>/reset_pose before launch. Default: true
   --launch=true|false           Start tb4_autonomy after health checks. Default: true
   --image-topic=/topic          Override auto-detected camera image topic.
+  --image-is-compressed=true|false
+                                  Override whether image topic is sensor_msgs/CompressedImage.
+                                  Default: auto-detect from image topic suffix.
   --camera-info-topic=/topic    Override auto-detected camera info topic.
   --odom-topic=/topic           Override auto-detected odom topic.
   --cmd-vel-topic=/topic        Override auto-detected cmd_vel topic.
@@ -138,6 +141,7 @@ use_rviz=true
 reset_odom=true
 do_launch=true
 image_topic_override=""
+image_is_compressed_override=""
 camera_info_topic_override=""
 odom_topic_override=""
 cmd_vel_topic_override=""
@@ -150,6 +154,7 @@ for arg in "$@"; do
     --reset-odom=*) reset_odom="$(bool_value "${arg#*=}")" ;;
     --launch=*) do_launch="$(bool_value "${arg#*=}")" ;;
     --image-topic=*) image_topic_override="${arg#*=}" ;;
+    --image-is-compressed=*) image_is_compressed_override="$(bool_value "${arg#*=}")" ;;
     --camera-info-topic=*) camera_info_topic_override="${arg#*=}" ;;
     --odom-topic=*) odom_topic_override="${arg#*=}" ;;
     --cmd-vel-topic=*) cmd_vel_topic_override="${arg#*=}" ;;
@@ -254,6 +259,8 @@ if [[ -n "$image_topic_override" ]]; then
   image_topic="$image_topic_override"
 else
   image_topic="$(first_existing_topic \
+    "$ns/oakd/rgb/preview/image_raw/compressed" \
+    "$ns/oakd/rgb/image_raw/compressed" \
     "$ns/oakd/rgb/preview/image_raw" \
     "$ns/oakd/rgb/image_raw" \
     "$ns/oakd/rgb/preview/image_color" \
@@ -263,10 +270,21 @@ else
   )" || fail "Could not auto-detect camera image topic for $robot. Pass --image-topic=/topic."
 fi
 
+if [[ -n "$image_is_compressed_override" ]]; then
+  image_is_compressed="$image_is_compressed_override"
+elif [[ "$image_topic" == */compressed ]]; then
+  image_is_compressed=true
+else
+  image_is_compressed=false
+fi
+
 if [[ -n "$camera_info_topic_override" ]]; then
   camera_info_topic="$camera_info_topic_override"
 else
   image_parent="$(dirname "$image_topic")"
+  if [[ "$image_topic" == */compressed || "$image_topic" == */compressedDepth || "$image_topic" == */theora || "$image_topic" == */zstd ]]; then
+    image_parent="$(dirname "$image_parent")"
+  fi
   camera_info_topic="$(first_existing_topic \
     "$image_parent/camera_info" \
     "$ns/oakd/rgb/preview/camera_info" \
@@ -288,6 +306,7 @@ fi
 
 info "Health check summary:"
 info "  image_topic=$image_topic"
+info "  image_is_compressed=$image_is_compressed"
 info "  camera_info_topic=$camera_info_topic"
 info "  odom_topic=$odom_topic"
 info "  scan_topic=$scan_topic"
@@ -317,6 +336,7 @@ exec ros2 launch tb4_autonomy autonomy.launch.py \
   dry_run:="$dry_run" \
   use_rviz:="$use_rviz" \
   image_topic:="$image_topic" \
+  image_is_compressed:="$image_is_compressed" \
   camera_info_topic:="$camera_info_topic" \
   odom_topic:="$odom_topic" \
   scan_topic:="$scan_topic" \
