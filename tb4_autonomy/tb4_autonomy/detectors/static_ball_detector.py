@@ -1,7 +1,8 @@
+#static detection
 from __future__ import annotations
 import cv2 as cv
 import numpy as np
-from tb4_autonomy.data_types import BallDetection, Box2D
+from tb4_autonomy.data_types import StaticBallDetection, Box2D
 
 class StaticObstacleDetector:
     name = "static_obstacle"
@@ -91,9 +92,8 @@ class StaticObstacleDetector:
             if aspect < 0.7 or aspect > 1.2: # filters based on shape proportions
                 continue
 
-            return BallDetection(
+            return StaticBallDetection(
                 box=Box2D(x, y, w, h), 
-                moving=False, # marks as static object
                 confidence=1.0
 )
         return None

@@ -1,3 +1,4 @@
+#data_types.py
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -92,6 +93,10 @@ class BallDetection:
     ttc: float | None = None
     confidence: float = 0.0
 
+@dataclass
+class StaticBallDetection:
+    box: Box2D
+    confidence: float = 0.0
 
 @dataclass
 class HorizonDetection:
@@ -105,6 +110,7 @@ class DetectionResults:
     arrow: ArrowDetection | None = None
     logo: LogoDetection | None = None
     moving_ball: BallDetection | None = None
+    static_ball: StaticBallDetection | None = None
     horizon: HorizonDetection | None = None
     timings_ms: dict[str, float] = field(default_factory=dict)
 

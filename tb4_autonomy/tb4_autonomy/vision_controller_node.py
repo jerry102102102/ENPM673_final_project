@@ -1,3 +1,4 @@
+#vision_controller_node.py
 from __future__ import annotations
 
 import math
@@ -273,7 +274,7 @@ class VisionControllerNode(Node):
             elif name == 'horizon':
                 results.horizon = result
             elif name == 'static_ball':
-                results.moving_ball = result
+                results.static_ball = result
 
         results.timings_ms = timings_ms
         self.latest_results = results
@@ -318,11 +319,11 @@ class VisionControllerNode(Node):
         now_sec = self.get_clock().now().nanoseconds * 1e-9
         state = self.arrow_controller.state
 
-        if self.latest_results.has_moving_ball:
+        if self.latest_results.has_moving_ball or self.latest_results.static_ball is not None:
             twist = Twist()
             state = AutonomyState.BALL_STOP
             self.arrow_controller.reset()
-            self._set_stop_debug(state, now_sec, twist, 'moving_ball_stop')
+            self._set_stop_debug(state, now_sec, twist, 'ball_stop')
         elif self.logo_stop_until is not None and now_sec < self.logo_stop_until:
             twist = Twist()
             state = AutonomyState.LOGO_STOP

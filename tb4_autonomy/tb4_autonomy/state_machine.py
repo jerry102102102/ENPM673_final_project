@@ -1,3 +1,4 @@
+#state_machine.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -38,6 +39,10 @@ class StateMachine:
             self.logo_armed = True
 
         if detections.has_moving_ball:
+            self._remember_navigation_state()
+            self.state = AutonomyState.BALL_STOP
+            return self._output(old_state)
+        if detections.static_ball is not None:
             self._remember_navigation_state()
             self.state = AutonomyState.BALL_STOP
             return self._output(old_state)
