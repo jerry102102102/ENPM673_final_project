@@ -6,6 +6,7 @@ usage() {
 Usage:
   scripts/run_real_tb4_autonomy.sh tb4_1 [options]
   scripts/run_real_tb4_autonomy.sh tb4_2 [options]
+  scripts/run_real_tb4_autonomy.sh tb4_4 [options]
   scripts/run_real_tb4_autonomy.sh tb4_5 [options]
 
 Options:
@@ -15,6 +16,9 @@ Options:
   --launch=true|false           Start tb4_autonomy after health checks. Default: true
   --image-topic=/topic          Override auto-detected camera image topic.
   --camera-info-topic=/topic    Override auto-detected camera info topic.
+  --odom-topic=/topic           Override auto-detected odom topic.
+  --cmd-vel-topic=/topic        Override auto-detected cmd_vel topic.
+  --scan-topic=/topic           Override auto-detected scan topic.
 
 Examples:
   scripts/run_real_tb4_autonomy.sh tb4_2
@@ -71,6 +75,15 @@ first_existing_topic() {
   return 1
 }
 
+refresh_topic_list() {
+  ros2 topic list > "$TOPIC_LIST_FILE" 2> "$TOPIC_ERROR_FILE"
+}
+
+print_visible_topics() {
+  warn "Visible topics containing '$robot', 'odom', 'cmd_vel', 'scan', or camera names:"
+  grep -En "($robot|odom|cmd_vel|scan|oakd|camera|image)" "$TOPIC_LIST_FILE" >&2 || sed -n '1,120p' "$TOPIC_LIST_FILE" >&2
+}
+
 wait_for_topic_list() {
   local tries=12
   local idx
@@ -106,13 +119,17 @@ case "$robot" in
     robot_ip="192.168.50.62"
     discovery_server=";192.168.50.62:11811;"
     ;;
+  tb4_4)
+    robot_ip="192.168.50.64"
+    discovery_server=";;;192.168.50.64:11811;"
+    ;;
   tb4_5)
     robot_ip="192.168.50.65"
     discovery_server=";;;;192.168.50.65:11811;"
     ;;
   *)
     usage
-    fail "Unknown robot '$robot'. Expected tb4_1, tb4_2, or tb4_5."
+    fail "Unknown robot '$robot'. Expected tb4_1, tb4_2, tb4_4, or tb4_5."
     ;;
 esac
 
@@ -122,6 +139,9 @@ reset_odom=true
 do_launch=true
 image_topic_override=""
 camera_info_topic_override=""
+odom_topic_override=""
+cmd_vel_topic_override=""
+scan_topic_override=""
 
 for arg in "$@"; do
   case "$arg" in
@@ -131,6 +151,9 @@ for arg in "$@"; do
     --launch=*) do_launch="$(bool_value "${arg#*=}")" ;;
     --image-topic=*) image_topic_override="${arg#*=}" ;;
     --camera-info-topic=*) camera_info_topic_override="${arg#*=}" ;;
+    --odom-topic=*) odom_topic_override="${arg#*=}" ;;
+    --cmd-vel-topic=*) cmd_vel_topic_override="${arg#*=}" ;;
+    --scan-topic=*) scan_topic_override="${arg#*=}" ;;
     -h|--help) usage; exit 0 ;;
     *) fail "Unknown option '$arg'" ;;
   esac
@@ -167,9 +190,6 @@ trap 'rm -f "$TOPIC_LIST_FILE" "$TOPIC_ERROR_FILE" "$RVIZ_CONFIG_FILE"' EXIT
 wait_for_topic_list || fail "ROS discovery failed. Check ROS env vars, discovery server, and robot network."
 
 ns="/$robot"
-cmd_vel_topic="$ns/cmd_vel"
-odom_topic="$ns/odom"
-scan_topic="$ns/scan"
 reset_service="$ns/reset_pose"
 state_topic="$ns/autonomy/state"
 perf_topic="$ns/autonomy/perf"
@@ -183,9 +203,52 @@ if [[ "$use_rviz" == true ]]; then
     "$default_rviz_config" > "$RVIZ_CONFIG_FILE"
 fi
 
-topic_exists "$odom_topic" || fail "Missing odom topic $odom_topic. Check namespace and discovery server."
-topic_exists "$cmd_vel_topic" || fail "Missing cmd_vel topic $cmd_vel_topic. Check namespace and discovery server."
-topic_exists "$scan_topic" || warn "Missing scan topic $scan_topic. Continuing because camera control may still run."
+if [[ -n "$cmd_vel_topic_override" ]]; then
+  cmd_vel_topic="$cmd_vel_topic_override"
+else
+  cmd_vel_topic="$(first_existing_topic \
+    "$ns/cmd_vel" \
+    "$ns/mobile_base/cmd_vel" \
+    "$ns/diffdrive_controller/cmd_vel_unstamped" \
+    "/cmd_vel" \
+  )" || {
+    print_visible_topics
+    fail "Could not auto-detect cmd_vel topic for $robot. Pass --cmd-vel-topic=/topic."
+  }
+fi
+
+if [[ -n "$odom_topic_override" ]]; then
+  odom_topic="$odom_topic_override"
+else
+  odom_topic=""
+  for _ in $(seq 1 10); do
+    refresh_topic_list || true
+    odom_topic="$(first_existing_topic \
+      "$ns/odom" \
+      "$ns/wheel_odom" \
+      "$ns/mobile_base/odom" \
+      "/odom" \
+    )" && break
+    sleep 1
+  done
+  if [[ -z "$odom_topic" ]]; then
+    print_visible_topics
+    fail "Could not auto-detect odom topic for $robot. Pass --odom-topic=/topic if the robot uses a different name."
+  fi
+fi
+
+if [[ -n "$scan_topic_override" ]]; then
+  scan_topic="$scan_topic_override"
+else
+  scan_topic="$(first_existing_topic \
+    "$ns/scan" \
+    "$ns/rplidar/scan" \
+    "/scan" \
+  )" || {
+    scan_topic="$ns/scan"
+    warn "Could not auto-detect scan topic. Continuing with $scan_topic because camera control may still run."
+  }
+fi
 
 if [[ -n "$image_topic_override" ]]; then
   image_topic="$image_topic_override"
