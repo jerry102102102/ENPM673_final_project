@@ -1,6 +1,6 @@
-# ENPM673 Turtlebot Perception Challenge
+# ENPM673 TurtleBot4 Perception Challenge
 
-> **📖 Autonomy package documentation:** See [`tb4_autonomy/README.md`](tb4_autonomy/README.md) for the perception-to-control architecture, how to extend the pipeline, and all configurable parameters.
+> Autonomy package documentation: see [`tb4_autonomy/README.md`](tb4_autonomy/README.md) for the current observation topics, control outputs, controller behavior, real TurtleBot4 scripts, and tuning parameters.
 
 ## How to install Webots?
 
@@ -24,7 +24,7 @@ wget https://github.com/cyberbotics/webots/releases/download/R2025a/webots_2025a
 sudo apt install ./webots_2025a_amd64.deb
 ```
 
-Also install the ROS2 Webots driver:
+Also install the ROS 2 Webots driver for your ROS distro:
 
 ``` shell
 sudo apt install ros-humble-webots-ros2
@@ -40,8 +40,8 @@ Verify the installation:
 
 ``` shell
 # first checkout the git repo
-git clone https://github.com/adil275/ENPM673-Final-Project-Simulation.git
-cd ENPM673-Final-Project-Simulation/
+git clone https://github.com/jerry102102102/ENPM673_final_project.git
+cd ENPM673_final_project/
 # build and install the package
 source /opt/ros/humble/setup.bash
 colcon build --symlink-install
@@ -69,6 +69,26 @@ source install/setup.bash
 ros2 launch tb4_autonomy autonomy.launch.py dry_run:=false
 ```
 
+The controller observes camera image, camera info, odom, and scan topics. In simulation the defaults are:
+
+``` text
+/camera/image_raw/image_color
+/camera/image_raw/camera_info
+/odom
+/scan
+```
+
+It publishes:
+
+``` text
+/cmd_vel
+/debug/annotated_image
+/autonomy/state
+/autonomy/perf
+```
+
+See [`tb4_autonomy/README.md`](tb4_autonomy/README.md) for the real robot namespaced topics.
+
 ## How to run on the real TurtleBot4?
 
 Connect your computer to the robot Wi-Fi first:
@@ -81,80 +101,81 @@ Password: RAL2022robots
 Build the workspace once before going to the robot:
 
 ``` shell
-cd ~/jerry_workspace/ENPM673_final_project
-source /opt/ros/jazzy/setup.bash
+cd ~/ENPM673_final_project
+source /opt/ros/humble/setup.bash
 colcon build --symlink-install
+source install/setup.bash
 ```
 
-Use the helper script to select the robot, set the ROS discovery environment, check topics, reset odom, and launch our controller with the correct namespace.
+There are two real robot scripts:
 
-For `tb4_2`:
+- `scripts/start_real_tb4_autonomy.sh`: direct launcher. Use this when you already configured Wi-Fi and ROS discovery yourself. It only maps topics for the selected robot and starts the controller.
+- `scripts/run_real_tb4_autonomy.sh`: full helper. It sets discovery variables, pings the robot, restarts the ROS daemon, checks topics, optionally resets odom, and launches the controller.
 
-``` shell
-cd ~/jerry_workspace/ENPM673_final_project
-scripts/run_real_tb4_autonomy.sh tb4_2
-```
-
-For `tb4_5`:
-
-``` shell
-cd ~/jerry_workspace/ENPM673_final_project
-scripts/run_real_tb4_autonomy.sh tb4_5
-```
-
-The script sets these automatically:
+For test day, if you set the discovery server yourself, use the direct launcher:
 
 ``` shell
 export ROS_DOMAIN_ID=0
 export ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export ROS_SUPER_CLIENT=True
-export ROS_DISCOVERY_SERVER="..."
+
+# choose one robot
+export ROS_DISCOVERY_SERVER="192.168.50.61:11811;"       # tb4_1
+export ROS_DISCOVERY_SERVER=";192.168.50.62:11811;"      # tb4_2
+export ROS_DISCOVERY_SERVER=";;;192.168.50.64:11811;"    # tb4_4
+export ROS_DISCOVERY_SERVER=";;;;192.168.50.65:11811;"   # tb4_5
 ```
 
-It also:
+Then launch:
 
-- pings the selected robot (`tb4_2`: `192.168.50.62`, `tb4_5`: `192.168.50.65`)
-- restarts the ROS daemon
-- checks `/tb4_X/odom`, `/tb4_X/cmd_vel`, `/tb4_X/scan`, and camera topics
-- calls `/tb4_X/reset_pose` to reset odom
-- launches `tb4_autonomy` with `/tb4_X/...` topics
-- publishes stamped `/cmd_vel` when the robot expects `TwistStamped`
-- shows clear error messages when discovery, topics, or reset odom fail
+``` shell
+scripts/start_real_tb4_autonomy.sh tb4_1
+scripts/start_real_tb4_autonomy.sh tb4_2
+scripts/start_real_tb4_autonomy.sh tb4_4
+scripts/start_real_tb4_autonomy.sh tb4_5
+```
 
-Recommended first run is a health check without launching autonomy:
+For a perception-only check:
+
+``` shell
+scripts/start_real_tb4_autonomy.sh tb4_2 --dry-run=true
+```
+
+To reset odom before launch:
+
+``` shell
+scripts/start_real_tb4_autonomy.sh tb4_2 --reset-odom=true
+```
+
+`start_real_tb4_autonomy.sh` maps topics under the selected namespace. For `tb4_2`, it uses:
+
+``` text
+/tb4_2/oakd/rgb/preview/image_raw
+/tb4_2/oakd/rgb/preview/camera_info
+/tb4_2/odom
+/tb4_2/scan
+/tb4_2/cmd_vel
+/tb4_2/debug/annotated_image
+```
+
+If you want the script to handle discovery and health checks:
 
 ``` shell
 scripts/run_real_tb4_autonomy.sh tb4_2 --launch=false
-```
-
-Safe perception-only run:
-
-``` shell
 scripts/run_real_tb4_autonomy.sh tb4_2 --dry-run=true
-```
-
-Active control:
-
-``` shell
 scripts/run_real_tb4_autonomy.sh tb4_2 --dry-run=false
 ```
 
-If the camera topic is not auto-detected, pass it manually:
+If the camera topic is not auto-detected, pass it manually to either script:
 
 ``` shell
-scripts/run_real_tb4_autonomy.sh tb4_2 \
+scripts/start_real_tb4_autonomy.sh tb4_2 \
   --image-topic=/tb4_2/oakd/rgb/preview/image_raw \
   --camera-info-topic=/tb4_2/oakd/rgb/preview/camera_info
 ```
 
-If odom reset is unavailable but the rest of the robot is visible:
-
-``` shell
-scripts/run_real_tb4_autonomy.sh tb4_2 --reset-odom=false
-```
-
-RViz is enabled by default. It displays the same `/debug/annotated_image` pipeline overlay used in simulation, including arrow tracking, UMD logo detection, and control state.
+RViz is enabled by default. It displays the namespaced debug image, including arrow tracking, UMD logo detection, moving/static ball detection, horizon debug line, and controller state.
 
 ## How to stop the WeBots simulation?
 
@@ -162,11 +183,11 @@ Instead of closing the WeBots window, just hit control-c from the console to sen
 
 ## How to bring up the camera image?
 
-One way is to use `rqt`'s image viewer to display the `/camera/image_raw` topic:
+One way is to use `rqt`'s image viewer to display the simulation camera topic:
 
 ``` shell
 source /opt/ros/humble/setup.bash
-ros2 run rqt_image_view rqt_image_view /camera/image_raw
+ros2 run rqt_image_view rqt_image_view /camera/image_raw/image_color
 ```
 
 ## How to manually drive the Turtlebot?
