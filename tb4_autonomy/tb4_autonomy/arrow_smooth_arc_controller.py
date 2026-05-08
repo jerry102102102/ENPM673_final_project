@@ -23,9 +23,13 @@ class ArrowSmoothArcConfig:
     focal_px: float = 600.0
 
     heading_sign: float = 1.0
-    heading_scale: float = 0.60
-    heading_oversteer_deg: float = 5.0
+    heading_scale: float = 0.15
+    heading_oversteer_deg: float = 2.0
     latched_yaw_alpha: float = 0.20
+    previous_heading_pull_gain: float = 0.30
+    previous_heading_pull_decay_sec: float = 2.20
+    previous_heading_pull_start_delta_deg: float = 10.0
+    previous_heading_pull_max_angular_z: float = 0.050
     latched_heading_confidence_min: float = 0.55
     latched_arrow_presence_confidence_min: float = 0.45
     yaw_latch_alpha: float = 0.15
@@ -41,29 +45,30 @@ class ArrowSmoothArcConfig:
     center_capture_threshold_px: float = 90.0
     min_center_bias_gain: float = 0.20
     max_center_bias_gain: float = 0.85
-    max_center_bias_deg: float = 8.0
+    max_center_bias_deg: float = 6.0
 
     kp_yaw: float = 1.2
-    kp_center: float = 0.65
-    kp_heading: float = 0.45
-    max_angular_z: float = 0.18
-    max_angular_accel: float = 0.35
+    kp_center: float = 0.45
+    kp_heading: float = 0.30
+    max_angular_z: float = 0.10
+    max_angular_accel: float = 0.15
     yaw_error_deadband_deg: float = 2.5
-    angular_lowpass_alpha: float = 0.20
+    angular_lowpass_alpha: float = 0.12
 
     heading_confidence_soft_min: float = 0.40
     heading_confidence_full: float = 0.80
     arrow_presence_confidence_soft_min: float = 0.35
     arrow_presence_confidence_full: float = 0.80
 
-    track_speed: float = 0.030
-    slow_track_speed: float = 0.022
+    track_speed: float = 0.028
+    slow_track_speed: float = 0.020
     slow_yaw_error_deg: float = 25.0
     slow_center_error_px: float = 100.0
     wait_linear_speed: float = 0.025
     pass_speed: float = 0.040
     pass_time_sec: float = 0.15
     missing_detection_hold_sec: float = 0.20
+    execute_latched_on_lost: bool = True
     pass_max_heading_error_deg: float = 6.0
     finish_heading_timeout_sec: float = 1.5
     finish_heading_speed: float = 0.015
@@ -73,6 +78,13 @@ class ArrowSmoothArcConfig:
     finish_center_max_bias_deg: float = 5.0
     finish_center_tolerance_px: float = 45.0
     min_track_time_sec: float = 0.8
+    close_camera_bottom_distance_in: float = 18.5
+    close_arrow_bottom_distance_in: float = 22.375
+    post_close_min_travel_m: float = 0.0
+    post_close_speed: float = 0.055
+    post_close_timeout_sec: float = 3.0
+    active_target_area_drop_ratio: float = 0.70
+    active_target_bottom_drop_ratio: float = 0.08
     debug_log: bool = True
 
     @property
@@ -92,12 +104,23 @@ class ArrowSmoothArcConfig:
         return math.radians(self.yaw_error_deadband_deg)
 
     @property
+    def previous_heading_pull_start_delta_rad(self) -> float:
+        return math.radians(self.previous_heading_pull_start_delta_deg)
+
+    @property
     def pass_max_heading_error_rad(self) -> float:
         return math.radians(self.pass_max_heading_error_deg)
 
     @property
     def finish_center_max_bias_rad(self) -> float:
         return math.radians(self.finish_center_max_bias_deg)
+
+    @property
+    def calibrated_post_close_travel_m(self) -> float:
+        if self.post_close_min_travel_m > 0.0:
+            return self.post_close_min_travel_m
+        extra_inches = max(0.0, self.close_arrow_bottom_distance_in - self.close_camera_bottom_distance_in)
+        return extra_inches * 0.0254
 
 
 @dataclass
@@ -118,6 +141,13 @@ class ArrowSmoothArcController:
         self.last_seen_time: float | None = None
         self.track_started_at: float | None = None
         self.finish_heading_started_at: float | None = None
+        self.close_lock_started_at: float | None = None
+        self.close_lock_started_xy: tuple[float, float] | None = None
+        self.previous_heading_pull_yaw: float | None = None
+        self.previous_heading_pull_started_at: float | None = None
+        self.last_active_area_ratio: float | None = None
+        self.last_active_bottom_ratio: float | None = None
+        self.active_target_lost_reason = ''
         self.last_angular_z = 0.0
         self.last_debug_info: dict[str, object] = {}
 
@@ -130,6 +160,13 @@ class ArrowSmoothArcController:
         self.last_seen_time = None
         self.track_started_at = None
         self.finish_heading_started_at = None
+        self.close_lock_started_at = None
+        self.close_lock_started_xy = None
+        self.previous_heading_pull_yaw = None
+        self.previous_heading_pull_started_at = None
+        self.last_active_area_ratio = None
+        self.last_active_bottom_ratio = None
+        self.active_target_lost_reason = ''
         self.last_angular_z = 0.0
         self.last_debug_info = {}
 
@@ -140,9 +177,17 @@ class ArrowSmoothArcController:
         image_height: int,
         now_sec: float,
         current_odom_yaw: float | None,
+        current_odom_xy: tuple[float, float] | None = None,
     ) -> ArrowSmoothArcOutput:
         transition_reason = ''
+        self.active_target_lost_reason = ''
         paper_valid = self._paper_is_valid(detection)
+        if (
+            self.state == AutonomyState.SMOOTH_ARC_TRACK
+            and paper_valid
+            and self._looks_like_new_far_target(detection, image_height)
+        ):
+            paper_valid = False
         if paper_valid:
             self.last_seen_time = now_sec
 
@@ -154,8 +199,12 @@ class ArrowSmoothArcController:
             self.pass_until = None
             self.last_angular_z = 0.0
             self.latched_world_yaw = None
+            self.previous_heading_pull_yaw = None
+            self.previous_heading_pull_started_at = None
             self.finish_heading_started_at = None
             self.track_started_at = None
+            self.close_lock_started_at = None
+            self.close_lock_started_xy = None
             self.state = AutonomyState.WAIT_FOR_TARGET
             transition_reason = 'pass_complete'
 
@@ -163,6 +212,7 @@ class ArrowSmoothArcController:
             if paper_valid:
                 self.state = AutonomyState.SMOOTH_ARC_TRACK
                 self.track_started_at = now_sec
+                self._remember_active_target(detection, image_height)
                 transition_reason = 'acquired_paper'
             else:
                 output = self._wait_output(detection, image_height, transition_reason, current_odom_yaw)
@@ -171,32 +221,39 @@ class ArrowSmoothArcController:
 
         if self.state == AutonomyState.SMOOTH_ARC_TRACK:
             latched_updated = False
+            is_close = paper_valid and self._is_close(detection, image_height)
             if paper_valid:
-                latched_updated = self._update_latched_world_yaw(detection, current_odom_yaw)
-            if paper_valid and self._is_close(detection, image_height):
-                if self._should_finish_latched_heading(detection, now_sec, current_odom_yaw):
-                    output = self._finish_latched_heading_output(
-                        detection,
-                        image_height,
-                        now_sec,
-                        current_odom_yaw,
-                        'finish_latched_heading_before_pass',
-                    )
-                    output.debug_info['latched_updated'] = latched_updated
-                    self._remember_timing(now_sec, output.twist.angular.z)
-                    return output
-                self.state = AutonomyState.PASS_TO_NEXT
-                self.pass_until = now_sec + self.config.pass_time_sec
-                self.last_angular_z = 0.0
-                self.finish_heading_started_at = None
-                output = self._pass_output(detection, image_height, 'target_close_heading_done', current_odom_yaw)
-                output.debug_info['latched_updated'] = latched_updated
-                self._remember_timing(now_sec, output.twist.angular.z)
-                return output
+                if not is_close or self.latched_world_yaw is None:
+                    latched_updated = self._update_latched_world_yaw(detection, current_odom_yaw, now_sec)
+                self._remember_active_target(detection, image_height)
 
             if not paper_valid:
                 if self._can_hold_missing_detection(now_sec):
                     output = self._missing_hold_output(detection, image_height, now_sec, current_odom_yaw)
+                    self._remember_timing(now_sec, output.twist.angular.z)
+                    return output
+                if self.config.execute_latched_on_lost and self.latched_world_yaw is not None:
+                    self._start_close_lock(now_sec, current_odom_xy)
+                    if self._should_finish_latched_heading(detection, now_sec, current_odom_yaw, current_odom_xy):
+                        output = self._finish_latched_heading_output(
+                            None,
+                            image_height,
+                            now_sec,
+                            current_odom_yaw,
+                            current_odom_xy,
+                            'target_lost_execute_latched_heading',
+                        )
+                        output.debug_info['latched_updated'] = latched_updated
+                        output.debug_info['heading_update_accepted'] = latched_updated
+                        self._remember_timing(now_sec, output.twist.angular.z)
+                        return output
+                    self.state = AutonomyState.PASS_TO_NEXT
+                    self.pass_until = now_sec + self.config.pass_time_sec
+                    self.last_angular_z = 0.0
+                    self.finish_heading_started_at = None
+                    output = self._pass_output(None, image_height, 'target_lost_latched_heading_done', current_odom_yaw)
+                    output.debug_info['latched_updated'] = latched_updated
+                    output.debug_info['heading_update_accepted'] = latched_updated
                     self._remember_timing(now_sec, output.twist.angular.z)
                     return output
                 self.state = AutonomyState.WAIT_FOR_TARGET
@@ -207,6 +264,7 @@ class ArrowSmoothArcController:
 
             output = self._track_output(detection, image_width, image_height, now_sec, current_odom_yaw, transition_reason)
             output.debug_info['latched_updated'] = latched_updated
+            output.debug_info['heading_update_accepted'] = latched_updated
             self._remember_timing(now_sec, output.twist.angular.z)
             return output
 
@@ -250,10 +308,31 @@ class ArrowSmoothArcController:
             return False
         return True
 
+    def _looks_like_new_far_target(self, detection: ArrowDetection | None, image_height: int) -> bool:
+        if detection is None or self.latched_world_yaw is None:
+            return False
+        if self.last_active_area_ratio is None or self.last_active_bottom_ratio is None:
+            return False
+        bottom_ratio = self._bottom_ratio(detection, image_height)
+        area_ratio = float(detection.area_ratio)
+        area_drop = area_ratio < self.last_active_area_ratio * self.config.active_target_area_drop_ratio
+        bottom_drop = bottom_ratio < self.last_active_bottom_ratio - self.config.active_target_bottom_drop_ratio
+        if area_drop and bottom_drop:
+            self.active_target_lost_reason = 'new_far_candidate_after_active_target'
+            return True
+        return False
+
+    def _remember_active_target(self, detection: ArrowDetection | None, image_height: int) -> None:
+        if detection is None:
+            return
+        self.last_active_area_ratio = max(float(detection.area_ratio), self.last_active_area_ratio or 0.0)
+        self.last_active_bottom_ratio = max(self._bottom_ratio(detection, image_height), self.last_active_bottom_ratio or 0.0)
+
     def _update_latched_world_yaw(
         self,
         detection: ArrowDetection | None,
         current_odom_yaw: float | None,
+        now_sec: float,
     ) -> bool:
         if not self._heading_is_latchable(detection, current_odom_yaw):
             return False
@@ -267,6 +346,13 @@ class ArrowSmoothArcController:
         if self.latched_world_yaw is None:
             self.latched_world_yaw = observed_world_yaw
         else:
+            yaw_delta = abs(shortest_angular_distance(self.latched_world_yaw, observed_world_yaw))
+            if (
+                self.previous_heading_pull_yaw is None
+                and yaw_delta >= self.config.previous_heading_pull_start_delta_rad
+            ):
+                self.previous_heading_pull_yaw = self.latched_world_yaw
+                self.previous_heading_pull_started_at = now_sec
             self.latched_world_yaw = smooth_angle(
                 self.latched_world_yaw,
                 observed_world_yaw,
@@ -279,7 +365,17 @@ class ArrowSmoothArcController:
         detection: ArrowDetection | None,
         now_sec: float,
         current_odom_yaw: float | None,
+        current_odom_xy: tuple[float, float] | None = None,
     ) -> bool:
+        close_travel = self._close_travel_m(now_sec, current_odom_xy)
+        required_travel = self.config.calibrated_post_close_travel_m
+        close_elapsed = 0.0 if self.close_lock_started_at is None else now_sec - self.close_lock_started_at
+        close_timeout_active = close_elapsed <= self.config.post_close_timeout_sec
+        if required_travel > 0.0 and close_travel < required_travel and close_timeout_active:
+            if self.finish_heading_started_at is None:
+                self.finish_heading_started_at = now_sec
+            return True
+
         if current_odom_yaw is None or self.latched_world_yaw is None:
             return False
 
@@ -309,6 +405,24 @@ class ArrowSmoothArcController:
 
         return True
 
+    def _start_close_lock(self, now_sec: float, current_odom_xy: tuple[float, float] | None) -> None:
+        if self.close_lock_started_at is not None:
+            return
+        self.close_lock_started_at = now_sec
+        self.close_lock_started_xy = current_odom_xy
+
+    def _close_travel_m(self, now_sec: float, current_odom_xy: tuple[float, float] | None) -> float:
+        if self.close_lock_started_at is None:
+            return 0.0
+        elapsed_travel = max(0.0, now_sec - self.close_lock_started_at) * max(0.0, self.config.post_close_speed)
+        if self.close_lock_started_xy is not None and current_odom_xy is not None:
+            odom_travel = math.hypot(
+                current_odom_xy[0] - self.close_lock_started_xy[0],
+                current_odom_xy[1] - self.close_lock_started_xy[1],
+            )
+            return max(odom_travel, elapsed_travel)
+        return elapsed_travel
+
     def _needs_finish_center(self, detection: ArrowDetection | None) -> bool:
         if detection is None:
             return False
@@ -320,6 +434,7 @@ class ArrowSmoothArcController:
         image_height: int,
         now_sec: float,
         current_odom_yaw: float | None,
+        current_odom_xy: tuple[float, float] | None,
         transition_reason: str,
     ) -> ArrowSmoothArcOutput:
         twist = Twist()
@@ -372,7 +487,7 @@ class ArrowSmoothArcController:
         )
         angular_z = self._smooth_angular(angular_target, now_sec)
 
-        twist.linear.x = self.config.finish_heading_speed
+        twist.linear.x = self.config.post_close_speed if self.close_lock_started_at is not None else self.config.finish_heading_speed
         twist.angular.z = angular_z
         return self._output(
             twist,
@@ -386,6 +501,8 @@ class ArrowSmoothArcController:
             finish_yaw_term=yaw_term,
             finish_center_term=center_term,
             finish_center_error_px=center_error_px,
+            close_travel_m=self._close_travel_m(now_sec, current_odom_xy),
+            close_required_travel_m=self.config.calibrated_post_close_travel_m,
             angular_target=angular_target,
             angular_smoothed=angular_z,
             control_mode=control_mode,
@@ -424,7 +541,11 @@ class ArrowSmoothArcController:
             heading_term = 0.0
             corrected_heading_error = 0.0
 
-        angular_target = center_term + heading_weight * heading_term
+        previous_heading_pull_term, previous_heading_pull_weight = self._previous_heading_pull_term(
+            now_sec,
+            current_odom_yaw,
+        )
+        angular_target = center_term + heading_weight * heading_term + previous_heading_pull_term
         effective_max_angular_z = max(0.0, self.config.max_angular_z)
         angular_target = clamp(angular_target, -effective_max_angular_z, effective_max_angular_z)
         angular_z = self._smooth_angular(angular_target, now_sec)
@@ -454,12 +575,43 @@ class ArrowSmoothArcController:
             heading_weight=heading_weight,
             center_term=center_term,
             heading_term=heading_term,
+            previous_heading_pull_term=previous_heading_pull_term,
+            previous_heading_pull_weight=previous_heading_pull_weight,
             angular_target=angular_target,
             angular_smoothed=angular_z,
             control_mode=control_mode,
             current_odom_yaw=current_odom_yaw,
             yaw_error=0.0,
         )
+
+    def _previous_heading_pull_term(
+        self,
+        now_sec: float,
+        current_odom_yaw: float | None,
+    ) -> tuple[float, float]:
+        if (
+            self.previous_heading_pull_yaw is None
+            or self.previous_heading_pull_started_at is None
+            or current_odom_yaw is None
+        ):
+            return 0.0, 0.0
+
+        age = max(0.0, now_sec - self.previous_heading_pull_started_at)
+        decay_sec = max(0.05, self.config.previous_heading_pull_decay_sec)
+        weight = math.exp(-age / decay_sec)
+        if weight < 0.02:
+            self.previous_heading_pull_yaw = None
+            self.previous_heading_pull_started_at = None
+            return 0.0, 0.0
+
+        yaw_error = shortest_angular_distance(current_odom_yaw, self.previous_heading_pull_yaw)
+        term = self.config.previous_heading_pull_gain * yaw_error * weight
+        term = clamp(
+            term,
+            -self.config.previous_heading_pull_max_angular_z,
+            self.config.previous_heading_pull_max_angular_z,
+        )
+        return term, weight
 
     def _oversteer_heading_error(self, heading_error: float) -> float:
         if abs(heading_error) < self.config.yaw_error_deadband_rad:
@@ -616,6 +768,9 @@ class ArrowSmoothArcController:
             'heading_weight': float(values.get('heading_weight', 0.0)),
             'center_term': float(values.get('center_term', 0.0)),
             'heading_term': float(values.get('heading_term', 0.0)),
+            'previous_heading_pull_term': float(values.get('previous_heading_pull_term', 0.0)),
+            'previous_heading_pull_weight': float(values.get('previous_heading_pull_weight', 0.0)),
+            'previous_heading_pull_yaw': self.previous_heading_pull_yaw,
             'finish_yaw_term': float(values.get('finish_yaw_term', 0.0)),
             'finish_center_term': float(values.get('finish_center_term', 0.0)),
             'finish_center_error_px': float(values.get('finish_center_error_px', 0.0)),
@@ -628,6 +783,10 @@ class ArrowSmoothArcController:
             'latched_world_yaw': self.latched_world_yaw,
             'track_started_at': self.track_started_at,
             'finish_heading_started_at': self.finish_heading_started_at,
+            'close_lock_started_at': self.close_lock_started_at,
+            'close_travel_m': float(values.get('close_travel_m', 0.0)),
+            'close_required_travel_m': float(values.get('close_required_travel_m', self.config.calibrated_post_close_travel_m)),
+            'active_target_lost_reason': self.active_target_lost_reason,
             'pass_max_heading_error_deg': self.config.pass_max_heading_error_deg,
             'desired_yaw': values.get('desired_yaw'),
             'yaw_error_deg': math.degrees(float(values.get('yaw_error', 0.0))),

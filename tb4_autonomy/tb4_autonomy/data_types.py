@@ -95,6 +95,13 @@ class BallDetection:
 
 
 @dataclass
+class StaticBallDetection:
+    box: Box2D
+    confidence: float = 0.0
+    mask_debug_image: object = None
+
+
+@dataclass
 class HorizonDetection:
     p1: tuple[int, int]
     p2: tuple[int, int]
@@ -106,12 +113,17 @@ class DetectionResults:
     arrow: ArrowDetection | None = None
     logo: LogoDetection | None = None
     moving_ball: BallDetection | None = None
+    static_ball: StaticBallDetection | None = None
     horizon: HorizonDetection | None = None
     timings_ms: dict[str, float] = field(default_factory=dict)
 
     @property
     def has_moving_ball(self) -> bool:
         return self.moving_ball is not None and self.moving_ball.moving
+
+    @property
+    def has_static_ball(self) -> bool:
+        return self.static_ball is not None
 
 
 @dataclass

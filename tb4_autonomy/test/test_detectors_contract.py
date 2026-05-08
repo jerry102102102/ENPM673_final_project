@@ -8,11 +8,13 @@ from tb4_autonomy.data_types import (
     DetectionResults,
     FrameContext,
     LogoDetection,
+    StaticBallDetection,
 )
 from tb4_autonomy.detectors.arrow_detector import ArrowDetector, ArrowDetectorConfig
 from tb4_autonomy.detectors.horizon_detector import HorizonDetector
 from tb4_autonomy.detectors.logo_detector import LogoDetector
 from tb4_autonomy.detectors.moving_ball_detector import MovingBallDetector
+from tb4_autonomy.detectors.static_ball_detector import StaticBallDetectorConfig, StaticObstacleDetector
 from tb4_autonomy.utils.image_tools import draw_detections
 
 
@@ -22,6 +24,7 @@ def test_detector_interfaces_do_not_crash_on_empty_frame():
         ArrowDetector(),
         LogoDetector(),
         MovingBallDetector(),
+        StaticObstacleDetector(),
         HorizonDetector(),
     ]
 
@@ -44,6 +47,7 @@ def test_overlay_draws_all_result_types_without_crashing():
         arrow=ArrowDetection(Box2D(10, 10, 20, 20), direction='left', confidence=1.0),
         logo=LogoDetection(Box2D(40, 10, 20, 20), confidence=1.0),
         moving_ball=BallDetection(Box2D(70, 10, 20, 20), moving=True, ttc=1.2, confidence=1.0),
+        static_ball=StaticBallDetection(Box2D(100, 10, 20, 20), confidence=0.8),
         horizon=HorizonDetector().detect(frame, context=None),
     )
 
@@ -75,6 +79,25 @@ def test_moving_ball_stop_hold_expires_when_ball_becomes_static():
     assert second is not None and second.moving
     assert held is not None and held.moving
     assert expired is None
+
+
+def test_static_ball_detector_reports_round_flow_candidate():
+    detector = StaticObstacleDetector(
+        StaticBallDetectorConfig(
+            min_area_px=200.0,
+            min_circularity=0.35,
+            min_aspect_ratio=0.45,
+            max_aspect_ratio=1.60,
+        )
+    )
+
+    first = detector.detect(_synthetic_white_ball_frame(cx=65), context=None)
+    second = detector.detect(_synthetic_white_ball_frame(cx=90), context=None)
+
+    assert first is None
+    assert second is not None
+    assert second.box.is_valid()
+    assert second.confidence > 0.0
 
 
 def test_arrow_detector_classifies_clear_synthetic_arrows():
@@ -134,6 +157,12 @@ def _synthetic_arrow_scene(direction: str):
 def _synthetic_orange_ball_frame(cx: int):
     frame = np.zeros((120, 200, 3), dtype=np.uint8)
     cv2.circle(frame, (cx, 75), 18, (0, 128, 255), -1)
+    return frame
+
+
+def _synthetic_white_ball_frame(cx: int):
+    frame = np.zeros((160, 240, 3), dtype=np.uint8)
+    cv2.circle(frame, (cx, 95), 28, (255, 255, 255), -1)
     return frame
 
 

@@ -28,7 +28,9 @@ vision_controller_node:
     cooldown_linear_x: 0.08
 
     logo_stop_s: 3.0
-    horizon_ratio: 0.5
+    horizon_ratio: 0.54
+    horizon_roi_top_ratio: 0.38
+    horizon_roi_bottom_ratio: 0.64
 
     center_tolerance_px: 40.0
     target_bbox_area_ratio: 0.08
@@ -51,25 +53,29 @@ vision_controller_node:
 
       # heading correction: make it softer
       heading_sign: 1.0
-      heading_scale: 0.60
-      heading_oversteer_deg: 5.0
+      heading_scale: 0.15
+      heading_oversteer_deg: 2.0
       latched_yaw_alpha: 0.20
+      previous_heading_pull_gain: 0.60
+      previous_heading_pull_decay_sec: 3.50
+      previous_heading_pull_start_delta_deg: 8.0
+      previous_heading_pull_max_angular_z: 0.070
       latched_heading_confidence_min: 0.55
       latched_arrow_presence_confidence_min: 0.45
-      kp_heading: 0.45
+      kp_heading: 0.30
 
       # center correction: keep it active but not too aggressive
       center_sign: -1.0
-      kp_center: 0.70
+      kp_center: 0.45
       center_capture_threshold_px: 90.0
       min_center_bias_gain: 0.10
-      max_center_bias_gain: 0.60
-      max_center_bias_deg: 10.0
+      max_center_bias_gain: 0.45
+      max_center_bias_deg: 6.0
 
       # angular smoothing
-      max_angular_z: 0.18
-      max_angular_accel: 0.35
-      angular_lowpass_alpha: 0.18
+      max_angular_z: 0.10
+      max_angular_accel: 0.15
+      angular_lowpass_alpha: 0.12
       yaw_error_deadband_deg: 3.0
 
       # confidence-weighted heading
@@ -89,8 +95,8 @@ vision_controller_node:
       heading_update_max_bottom_ratio: 0.95
 
       # speed
-      track_speed: 0.030
-      slow_track_speed: 0.022
+      track_speed: 0.028
+      slow_track_speed: 0.020
       slow_yaw_error_deg: 25.0
       slow_center_error_px: 100.0
 
@@ -98,6 +104,7 @@ vision_controller_node:
       pass_speed: 0.035
       pass_time_sec: 0.10
       missing_detection_hold_sec: 0.20
+      execute_latched_on_lost: true
       pass_max_heading_error_deg: 6.0
       finish_heading_timeout_sec: 1.5
       finish_heading_speed: 0.015
@@ -107,6 +114,13 @@ vision_controller_node:
       finish_center_max_bias_deg: 5.0
       finish_center_tolerance_px: 45.0
       min_track_time_sec: 0.8
+      close_camera_bottom_distance_in: 18.5
+      close_arrow_bottom_distance_in: 22.375
+      post_close_min_travel_m: 0.0
+      post_close_speed: 0.055
+      post_close_timeout_sec: 3.0
+      active_target_area_drop_ratio: 0.70
+      active_target_bottom_drop_ratio: 0.08
 
       debug_log: true
 
@@ -136,9 +150,12 @@ vision_controller_node:
     arrow_paper_max_area_ratio: 0.25
     arrow_paper_min_aspect_ratio: 0.3
     arrow_paper_max_aspect_ratio: 12.0
-    arrow_floor_roi_min_y_ratio: 0.45
+    arrow_floor_roi_min_y_ratio: 0.52
     arrow_candidate_max_center_error_ratio: 0.40
-    arrow_min_candidate_bottom_ratio: 0.45
+    arrow_min_candidate_bottom_ratio: 0.50
+    arrow_max_candidate_height_ratio: 0.52
+    arrow_max_candidate_width_ratio: 0.75
+    arrow_max_candidate_area_ratio: 0.18
     arrow_reject_back_direction: true
     arrow_max_valid_bbox_width_ratio: 0.70
     arrow_max_valid_bbox_height_ratio: 0.70

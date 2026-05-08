@@ -21,6 +21,7 @@ from tb4_autonomy.detectors.arrow_detector import ArrowDetector, ArrowDetectorCo
 from tb4_autonomy.detectors.horizon_detector import HorizonDetector
 from tb4_autonomy.detectors.logo_detector import LogoDetector
 from tb4_autonomy.detectors.moving_ball_detector import MovingBallDetector
+from tb4_autonomy.detectors.static_ball_detector import StaticObstacleDetector
 from tb4_autonomy.utils.geometry import yaw_from_quaternion
 from tb4_autonomy.utils.image_tools import draw_detections, draw_status
 
@@ -42,6 +43,8 @@ class VisionControllerNode(Node):
         self.dry_run = self._declare_bool('dry_run', True)
         self.control_rate_hz = float(self._declare('control_rate_hz', 20.0))
         self.horizon_ratio = float(self._declare('horizon_ratio', 0.5))
+        self.horizon_roi_top_ratio = float(self._declare('horizon_roi_top_ratio', 0.42))
+        self.horizon_roi_bottom_ratio = float(self._declare('horizon_roi_bottom_ratio', 0.60))
 
         self.logo_stop_s = float(self._declare('logo_stop_s', 3.0))
         self.logo_confirm_frames = int(self._declare('logo_confirm_frames', 5))
@@ -77,6 +80,9 @@ class VisionControllerNode(Node):
             floor_roi_min_y_ratio=float(self._declare('arrow_floor_roi_min_y_ratio', 0.45)),
             candidate_max_center_error_ratio=float(self._declare('arrow_candidate_max_center_error_ratio', 0.40)),
             min_candidate_bottom_ratio=float(self._declare('arrow_min_candidate_bottom_ratio', 0.45)),
+            max_candidate_height_ratio=float(self._declare('arrow_max_candidate_height_ratio', 0.58)),
+            max_candidate_width_ratio=float(self._declare('arrow_max_candidate_width_ratio', 0.75)),
+            max_candidate_area_ratio=float(self._declare('arrow_max_candidate_area_ratio', 0.18)),
             reject_back_direction=self._declare_bool('arrow_reject_back_direction', True),
             max_valid_bbox_width_ratio=float(self._declare('arrow_max_valid_bbox_width_ratio', 0.70)),
             max_valid_bbox_height_ratio=float(self._declare('arrow_max_valid_bbox_height_ratio', 0.70)),
@@ -108,9 +114,21 @@ class VisionControllerNode(Node):
             close_bottom_ratio=float(self._declare('arrow_smooth_arc_controller.close_bottom_ratio', 0.995)),
             focal_px=float(self._declare('arrow_smooth_arc_controller.focal_px', 600.0)),
             heading_sign=float(self._declare('arrow_smooth_arc_controller.heading_sign', 1.0)),
-            heading_scale=float(self._declare('arrow_smooth_arc_controller.heading_scale', 0.60)),
-            heading_oversteer_deg=float(self._declare('arrow_smooth_arc_controller.heading_oversteer_deg', 5.0)),
+            heading_scale=float(self._declare('arrow_smooth_arc_controller.heading_scale', 0.15)),
+            heading_oversteer_deg=float(self._declare('arrow_smooth_arc_controller.heading_oversteer_deg', 2.0)),
             latched_yaw_alpha=float(self._declare('arrow_smooth_arc_controller.latched_yaw_alpha', 0.20)),
+            previous_heading_pull_gain=float(
+                self._declare('arrow_smooth_arc_controller.previous_heading_pull_gain', 0.30)
+            ),
+            previous_heading_pull_decay_sec=float(
+                self._declare('arrow_smooth_arc_controller.previous_heading_pull_decay_sec', 2.20)
+            ),
+            previous_heading_pull_start_delta_deg=float(
+                self._declare('arrow_smooth_arc_controller.previous_heading_pull_start_delta_deg', 10.0)
+            ),
+            previous_heading_pull_max_angular_z=float(
+                self._declare('arrow_smooth_arc_controller.previous_heading_pull_max_angular_z', 0.050)
+            ),
             latched_heading_confidence_min=float(
                 self._declare('arrow_smooth_arc_controller.latched_heading_confidence_min', 0.55)
             ),
@@ -137,9 +155,9 @@ class VisionControllerNode(Node):
             center_capture_threshold_px=float(self._declare('arrow_smooth_arc_controller.center_capture_threshold_px', 90.0)),
             min_center_bias_gain=float(self._declare('arrow_smooth_arc_controller.min_center_bias_gain', 0.10)),
             max_center_bias_gain=float(self._declare('arrow_smooth_arc_controller.max_center_bias_gain', 0.60)),
-            max_center_bias_deg=float(self._declare('arrow_smooth_arc_controller.max_center_bias_deg', 10.0)),
+            max_center_bias_deg=float(self._declare('arrow_smooth_arc_controller.max_center_bias_deg', 6.0)),
             kp_yaw=float(self._declare('arrow_smooth_arc_controller.kp_yaw', 1.2)),
-            kp_center=float(self._declare('arrow_smooth_arc_controller.kp_center', 0.70)),
+            kp_center=float(self._declare('arrow_smooth_arc_controller.kp_center', 0.45)),
             kp_heading=float(self._declare('arrow_smooth_arc_controller.kp_heading', 0.45)),
             max_angular_z=float(self._declare('arrow_smooth_arc_controller.max_angular_z', 0.18)),
             max_angular_accel=float(self._declare('arrow_smooth_arc_controller.max_angular_accel', 0.35)),
@@ -165,6 +183,7 @@ class VisionControllerNode(Node):
             missing_detection_hold_sec=float(
                 self._declare('arrow_smooth_arc_controller.missing_detection_hold_sec', 0.20)
             ),
+            execute_latched_on_lost=self._declare_bool('arrow_smooth_arc_controller.execute_latched_on_lost', True),
             pass_max_heading_error_deg=float(
                 self._declare('arrow_smooth_arc_controller.pass_max_heading_error_deg', 6.0)
             ),
@@ -184,6 +203,21 @@ class VisionControllerNode(Node):
                 self._declare('arrow_smooth_arc_controller.finish_center_tolerance_px', 45.0)
             ),
             min_track_time_sec=float(self._declare('arrow_smooth_arc_controller.min_track_time_sec', 0.8)),
+            close_camera_bottom_distance_in=float(
+                self._declare('arrow_smooth_arc_controller.close_camera_bottom_distance_in', 18.5)
+            ),
+            close_arrow_bottom_distance_in=float(
+                self._declare('arrow_smooth_arc_controller.close_arrow_bottom_distance_in', 22.375)
+            ),
+            post_close_min_travel_m=float(self._declare('arrow_smooth_arc_controller.post_close_min_travel_m', 0.0)),
+            post_close_speed=float(self._declare('arrow_smooth_arc_controller.post_close_speed', 0.055)),
+            post_close_timeout_sec=float(self._declare('arrow_smooth_arc_controller.post_close_timeout_sec', 3.0)),
+            active_target_area_drop_ratio=float(
+                self._declare('arrow_smooth_arc_controller.active_target_area_drop_ratio', 0.70)
+            ),
+            active_target_bottom_drop_ratio=float(
+                self._declare('arrow_smooth_arc_controller.active_target_bottom_drop_ratio', 0.08)
+            ),
             debug_log=self._declare_bool('arrow_smooth_arc_controller.debug_log', True),
         )
 
@@ -195,13 +229,19 @@ class VisionControllerNode(Node):
             'arrow': ArrowDetector(arrow_config),
             'logo': LogoDetector(detect_threshold=self.logo_confirm_frames),
             'moving_ball': MovingBallDetector(),
-            'horizon': HorizonDetector(self.horizon_ratio),
+            'static_ball': StaticObstacleDetector(),
+            'horizon': HorizonDetector(
+                self.horizon_ratio,
+                roi_top_ratio=self.horizon_roi_top_ratio,
+                roi_bottom_ratio=self.horizon_roi_bottom_ratio,
+            ),
         }
 
         self.latest_results = DetectionResults()
         self.latest_camera_info: CameraInfo | None = None
         self.latest_scan: LaserScan | None = None
         self.latest_yaw: float | None = None
+        self.latest_odom_xy: tuple[float, float] | None = None
         self.latest_odom_linear_x = 0.0
         self.latest_image_width = 0
         self.latest_image_height = 0
@@ -245,6 +285,7 @@ class VisionControllerNode(Node):
 
     def odom_callback(self, msg: Odometry) -> None:
         self.latest_yaw = yaw_from_quaternion(msg.pose.pose.orientation)
+        self.latest_odom_xy = (msg.pose.pose.position.x, msg.pose.pose.position.y)
         self.latest_odom_linear_x = msg.twist.twist.linear.x
 
     def image_callback(self, msg: Image | CompressedImage) -> None:
@@ -281,6 +322,8 @@ class VisionControllerNode(Node):
                 results.logo = result
             elif name == 'moving_ball':
                 results.moving_ball = result
+            elif name == 'static_ball':
+                results.static_ball = result
             elif name == 'horizon':
                 results.horizon = result
 
@@ -300,12 +343,15 @@ class VisionControllerNode(Node):
                 f'frame: {self.latest_frame_ms:.1f} ms',
                 f'yaw: {0.0 if self.latest_yaw is None else self.latest_yaw:.2f} rad',
                 self._logo_status_line(results),
+                self._static_ball_status_line(results),
                 self._arrow_status_line(results),
                 self._controller_status_line('CENTER_ERR', 'center_error_px', '.0f', 'px'),
                 self._controller_status_line('CENTER_BIAS', 'center_bias_deg', '.1f', 'deg'),
                 self._controller_status_line('HEAD_ERR', 'heading_error_rad', '.2f', 'rad'),
                 self._control_mode_status_line(),
                 self._controller_status_line('HEAD_W', 'heading_weight', '.2f', ''),
+                self._controller_status_line('PREV_W', 'previous_heading_pull_weight', '.2f', ''),
+                self._controller_status_line('PREV_T', 'previous_heading_pull_term', '.3f', ''),
                 self._controller_status_line('C_TERM', 'center_term', '.3f', ''),
                 self._controller_status_line('H_TERM', 'heading_term', '.3f', ''),
                 self._controller_status_line('ANG_TGT', 'angular_target', '.3f', ''),
@@ -336,11 +382,12 @@ class VisionControllerNode(Node):
         now_sec = self.get_clock().now().nanoseconds * 1e-9
         state = self.arrow_controller.state
 
-        if self.latest_results.has_moving_ball:
+        if self.latest_results.has_moving_ball or self.latest_results.has_static_ball:
             twist = Twist()
             state = AutonomyState.BALL_STOP
             self.arrow_controller.reset()
-            self._set_stop_debug(state, now_sec, twist, 'moving_ball_stop')
+            reason = 'moving_ball_stop' if self.latest_results.has_moving_ball else 'static_ball_stop'
+            self._set_stop_debug(state, now_sec, twist, reason)
         elif self.logo_stop_until is not None and now_sec < self.logo_stop_until:
             twist = Twist()
             state = AutonomyState.LOGO_STOP
@@ -386,6 +433,7 @@ class VisionControllerNode(Node):
             self.latest_image_height,
             now_sec,
             self.latest_yaw,
+            self.latest_odom_xy,
         )
         arrow_detector = self.detectors.get('arrow')
         if self.previous_arrow_state == AutonomyState.PASS_TO_NEXT and output.current_state == AutonomyState.WAIT_FOR_TARGET:
@@ -415,6 +463,8 @@ class VisionControllerNode(Node):
             'logo_stop_remaining_sec': remaining,
             'logo_detect_count': logo_count,
             'logo_confirm_frames': logo_threshold,
+            'moving_ball_detected': self.latest_results.moving_ball is not None,
+            'static_ball_detected': self.latest_results.static_ball is not None,
             'transition_reason': reason,
         }
 
@@ -452,6 +502,15 @@ class VisionControllerNode(Node):
             f'conf={results.logo.confidence:.1f} '
             f'box=({results.logo.box.x},{results.logo.box.y},{results.logo.box.w},{results.logo.box.h}) '
             f'stop={remaining:.1f}s'
+        )
+
+    def _static_ball_status_line(self, results: DetectionResults) -> str:
+        if results.static_ball is None:
+            return 'static_ball: none'
+        ball = results.static_ball
+        return (
+            f'static_ball: conf={ball.confidence:.2f} '
+            f'box=({ball.box.x},{ball.box.y},{ball.box.w},{ball.box.h})'
         )
 
     def _debug_value(self, key: str, default=''):
@@ -492,6 +551,8 @@ class VisionControllerNode(Node):
             'heading_confidence',
             'arrow_presence_confidence',
             'heading_weight',
+            'previous_heading_pull_weight',
+            'previous_heading_pull_term',
             'center_term',
             'heading_term',
             'angular_target',
@@ -501,6 +562,10 @@ class VisionControllerNode(Node):
             'arrow_world_yaw',
             'latched_world_yaw',
             'finish_heading_started_at',
+            'close_lock_started_at',
+            'close_travel_m',
+            'close_required_travel_m',
+            'active_target_lost_reason',
             'pass_max_heading_error_deg',
             'desired_yaw',
             'yaw_error_deg',
