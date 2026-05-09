@@ -41,6 +41,10 @@ class ArrowDetectorConfig:
     fallback_bbox_padding_ratio: float = 0.0
     merge_black_fragments_fallback: bool = False
     black_fragment_group_radius_px: float = 55.0
+    black_fragment_expand_x_px: float = 0.0
+    black_fragment_expand_y_px: float = 0.0
+    black_fragment_min_box_w_px: float = 0.0
+    black_fragment_min_box_h_px: float = 0.0
     min_arrow_area_ratio: float = 0.01
 
     # Paper candidate config
@@ -534,6 +538,7 @@ class ArrowDetector:
         if not group:
             group = [seed]
         union = self._union_boxes(group)
+        union = self._expand_black_fragment_box(union, width, height)
         x, y, w, h = union.x, union.y, union.w, union.h
         area_px = float(w * h)
         if area_px <= 0.0:
@@ -555,6 +560,31 @@ class ArrowDetector:
             black_pixel_ratio=black_ratio,
             score=score,
         )
+
+    def _expand_black_fragment_box(self, box: Box2D, image_width: int, image_height: int) -> Box2D:
+        expand_x = max(0.0, float(self.config.black_fragment_expand_x_px))
+        expand_y = max(0.0, float(self.config.black_fragment_expand_y_px))
+        x1 = float(box.x) - expand_x
+        y1 = float(box.y) - expand_y
+        x2 = float(box.x + box.w) + expand_x
+        y2 = float(box.y + box.h) + expand_y
+
+        min_w = max(0.0, float(self.config.black_fragment_min_box_w_px))
+        min_h = max(0.0, float(self.config.black_fragment_min_box_h_px))
+        if min_w > 0.0 and x2 - x1 < min_w:
+            cx = (x1 + x2) * 0.5
+            x1 = cx - min_w * 0.5
+            x2 = cx + min_w * 0.5
+        if min_h > 0.0 and y2 - y1 < min_h:
+            cy = (y1 + y2) * 0.5
+            y1 = cy - min_h * 0.5
+            y2 = cy + min_h * 0.5
+
+        x1 = max(0, int(math.floor(x1)))
+        y1 = max(0, int(math.floor(y1)))
+        x2 = min(image_width, int(math.ceil(x2)))
+        y2 = min(image_height, int(math.ceil(y2)))
+        return Box2D(x=x1, y=y1, w=max(1, x2 - x1), h=max(1, y2 - y1))
 
     def _paper_boxes_related(self, first: Box2D, second: Box2D, image_width: int) -> bool:
         first_y2 = first.y + first.h

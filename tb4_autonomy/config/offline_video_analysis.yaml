@@ -97,6 +97,10 @@ vision_controller_node:
     arrow_fallback_bbox_padding_ratio: 1.4
     arrow_merge_black_fragments_fallback: true
     arrow_black_fragment_group_radius_px: 55.0
+    arrow_black_fragment_expand_x_px: 12.0
+    arrow_black_fragment_expand_y_px: 10.0
+    arrow_black_fragment_min_box_w_px: 76.0
+    arrow_black_fragment_min_box_h_px: 42.0
     arrow_min_arrow_area_ratio: 0.003
 
     arrow_paper_v_min: 150
