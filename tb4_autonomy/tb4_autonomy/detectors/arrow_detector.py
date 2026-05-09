@@ -23,6 +23,8 @@ class ArrowDetectorConfig:
 
     min_area_ratio: float = 0.005
     max_area_ratio: float = 0.40
+    min_area_px: float = 0.0
+    max_area_px: float = 0.0
     min_aspect_ratio: float = 0.5
     max_aspect_ratio: float = 2.0
     min_black_pixel_ratio: float = 0.03
@@ -43,6 +45,8 @@ class ArrowDetectorConfig:
     paper_s_max: int = 90
     paper_min_area_ratio: float = 0.001
     paper_max_area_ratio: float = 0.25
+    paper_min_area_px: float = 0.0
+    paper_max_area_px: float = 0.0
     paper_min_aspect_ratio: float = 0.3
     paper_max_aspect_ratio: float = 12.0
 
@@ -55,6 +59,8 @@ class ArrowDetectorConfig:
     max_candidate_height_ratio: float = 0.58
     max_candidate_width_ratio: float = 0.75
     max_candidate_area_ratio: float = 0.18
+    min_candidate_area_px: float = 0.0
+    max_candidate_area_px: float = 0.0
 
     # Compatibility with newer YAML/analyzer parameters.
     reject_back_direction: bool = True
@@ -295,6 +301,10 @@ class ArrowDetector:
             area_ratio = box_area / image_area
             if area_ratio < self.config.min_area_ratio or area_ratio > self.config.max_area_ratio:
                 continue
+            if self.config.min_area_px > 0.0 and box_area < self.config.min_area_px:
+                continue
+            if self.config.max_area_px > 0.0 and box_area > self.config.max_area_px:
+                continue
 
             aspect = w / float(h)
             if aspect < self.config.min_aspect_ratio or aspect > self.config.max_aspect_ratio:
@@ -356,6 +366,10 @@ class ArrowDetector:
             area_ratio = box_area / image_area
             if area_ratio < self.config.paper_min_area_ratio or area_ratio > self.config.paper_max_area_ratio:
                 continue
+            if self.config.paper_min_area_px > 0.0 and box_area < self.config.paper_min_area_px:
+                continue
+            if self.config.paper_max_area_px > 0.0 and box_area > self.config.paper_max_area_px:
+                continue
 
             aspect = w / float(h)
             if aspect < self.config.paper_min_aspect_ratio or aspect > self.config.paper_max_aspect_ratio:
@@ -407,6 +421,10 @@ class ArrowDetector:
 
             area_ratio = box_area / image_area
             if area_ratio < self.config.paper_min_area_ratio or area_ratio > self.config.paper_max_area_ratio:
+                continue
+            if self.config.paper_min_area_px > 0.0 and box_area < self.config.paper_min_area_px:
+                continue
+            if self.config.paper_max_area_px > 0.0 and box_area > self.config.paper_max_area_px:
                 continue
 
             aspect = w / float(h)
@@ -513,6 +531,7 @@ class ArrowDetector:
         height_ratio = h / float(image_height)
         width_ratio = w / float(image_width)
         area_ratio = (w * h) / float(image_width * image_height)
+        area_px = float(w * h)
 
         if bottom_ratio < self.config.min_candidate_bottom_ratio:
             return False
@@ -521,6 +540,10 @@ class ArrowDetector:
         if width_ratio > self.config.max_candidate_width_ratio:
             return False
         if area_ratio > self.config.max_candidate_area_ratio:
+            return False
+        if self.config.min_candidate_area_px > 0.0 and area_px < self.config.min_candidate_area_px:
+            return False
+        if self.config.max_candidate_area_px > 0.0 and area_px > self.config.max_candidate_area_px:
             return False
 
         center_x = x + w / 2.0

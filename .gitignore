@@ -5,6 +5,7 @@ log/
 
 # Runtime captures and local experiment outputs
 run_logs/
+videos/
 
 # Python caches and test caches
 __pycache__/

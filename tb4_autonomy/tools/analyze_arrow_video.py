@@ -51,6 +51,8 @@ def _arrow_config(params: dict) -> ArrowDetectorConfig:
         dilate_iterations=int(params.get('arrow_dilate_iterations', 1)),
         min_area_ratio=float(params.get('arrow_min_area_ratio', 0.005)),
         max_area_ratio=float(params.get('arrow_max_area_ratio', 0.40)),
+        min_area_px=float(params.get('arrow_min_area_px', 0.0)),
+        max_area_px=float(params.get('arrow_max_area_px', 0.0)),
         min_aspect_ratio=float(params.get('arrow_min_aspect_ratio', 0.5)),
         max_aspect_ratio=float(params.get('arrow_max_aspect_ratio', 2.0)),
         min_black_pixel_ratio=float(params.get('arrow_min_black_pixel_ratio', 0.03)),
@@ -66,6 +68,8 @@ def _arrow_config(params: dict) -> ArrowDetectorConfig:
         paper_s_max=int(params.get('arrow_paper_s_max', 90)),
         paper_min_area_ratio=float(params.get('arrow_paper_min_area_ratio', 0.001)),
         paper_max_area_ratio=float(params.get('arrow_paper_max_area_ratio', 0.25)),
+        paper_min_area_px=float(params.get('arrow_paper_min_area_px', 0.0)),
+        paper_max_area_px=float(params.get('arrow_paper_max_area_px', 0.0)),
         paper_min_aspect_ratio=float(params.get('arrow_paper_min_aspect_ratio', 0.3)),
         paper_max_aspect_ratio=float(params.get('arrow_paper_max_aspect_ratio', 12.0)),
         floor_roi_min_y_ratio=float(params.get('arrow_floor_roi_min_y_ratio', 0.45)),
@@ -74,6 +78,8 @@ def _arrow_config(params: dict) -> ArrowDetectorConfig:
         max_candidate_height_ratio=float(params.get('arrow_max_candidate_height_ratio', 0.58)),
         max_candidate_width_ratio=float(params.get('arrow_max_candidate_width_ratio', 0.75)),
         max_candidate_area_ratio=float(params.get('arrow_max_candidate_area_ratio', 0.18)),
+        min_candidate_area_px=float(params.get('arrow_min_candidate_area_px', 0.0)),
+        max_candidate_area_px=float(params.get('arrow_max_candidate_area_px', 0.0)),
         reject_back_direction=_as_bool(params.get('arrow_reject_back_direction'), True),
         max_valid_bbox_width_ratio=float(params.get('arrow_max_valid_bbox_width_ratio', 0.70)),
         max_valid_bbox_height_ratio=float(params.get('arrow_max_valid_bbox_height_ratio', 0.70)),
@@ -211,11 +217,11 @@ def _draw_homography_debug_panel(canvas, detection):
     if detection is None:
         return
 
-    panel_w = 180
-    panel_h = 180
+    h, w = canvas.shape[:2]
+    panel_w = min(180, max(70, int(w * 0.28)))
+    panel_h = panel_w
     gap = 8
 
-    h, w = canvas.shape[:2]
     x = max(0, w - panel_w - 12)
     y = 12
 
@@ -226,6 +232,20 @@ def _draw_homography_debug_panel(canvas, detection):
 
     _paste_debug_thumbnail(canvas, warped, 'WARPED PAPER', x, y, panel_w, panel_h)
     _paste_debug_thumbnail(canvas, mask, 'ARROW MASK', x, y + panel_h + gap, panel_w, panel_h)
+
+
+def _draw_analysis_status(image, lines: list[str]) -> None:
+    height, width = image.shape[:2]
+    scale = max(0.30, min(0.55, width / 700.0))
+    thickness = 1
+    line_height = max(12, int(24 * scale))
+    max_lines = max(5, min(len(lines), (height - 8) // line_height))
+    x = max(4, int(width * 0.02))
+    y = max(12, int(line_height * 0.90))
+    for line in lines[:max_lines]:
+        cv2.putText(image, line, (x + 1, y + 1), cv2.FONT_HERSHEY_SIMPLEX, scale, (0, 0, 0), thickness + 2, cv2.LINE_AA)
+        cv2.putText(image, line, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), thickness, cv2.LINE_AA)
+        y += line_height
 
 
 def _safe_attr(obj, name: str, default=None):
@@ -306,6 +326,12 @@ def analyze(video_path: Path, output_path: Path, csv_path: Path, summary_path: P
             'stable',
             'confidence',
             'area_ratio',
+            'box_x',
+            'box_y',
+            'box_w',
+            'box_h',
+            'box_area_px',
+            'box_bottom_ratio',
             'center_error_px',
             'heading_error_rad',
             'heading_angle_deg',
@@ -359,28 +385,19 @@ def analyze(video_path: Path, output_path: Path, csv_path: Path, summary_path: P
             if detection is not None:
                 from tb4_autonomy.data_types import DetectionResults
                 draw_detections(annotated, DetectionResults(arrow=detection))
-            draw_status(
+            box_area_px = 0 if detection is None else int(detection.box.area)
+            box_text = 'box=none' if detection is None else (
+                f'box={detection.box.w}x{detection.box.h}px area={box_area_px}px bottom={(detection.box.y + detection.box.h) / height:.2f}'
+            )
+            _draw_analysis_status(
                 annotated,
                 [
                     f'FRAME: {frame_index}  T: {now_sec:.2f}s',
-                    f'DIR: {debug.get("direction")}  FINAL_RAW: {None if detection is None else detection.raw_direction}',
-                    f'HEADING_SOURCE: {None if detection is None else detection.heading_source}',
-                    f'STABLE: {debug.get("is_stable")}  CONF: {float(debug.get("confidence", 0.0)):.3f}',
-                    f'HEADING: valid={False if detection is None else detection.heading_valid} angle={0.0 if detection is None or detection.heading_angle_deg is None else detection.heading_angle_deg:.1f}deg conf={0.0 if detection is None else detection.heading_confidence:.3f}',
-                    f'ARROW_EXIST_CONF: {0.0 if detection is None else detection.arrow_presence_confidence:.3f}',
-                    f'PAPER_HEADING_SOURCE: debug_only',
-                    f'PAPER_AXIS: {0.0 if detection is None or detection.paper_axis_angle_rad is None else detection.paper_axis_angle_rad:.2f}  PAPER_HEAD: {0.0 if detection is None or detection.paper_heading_angle_rad is None else detection.paper_heading_angle_rad:.2f}',
-                    f'BLACK_ARROW_RAW: {None if detection is None else detection.black_arrow_direction} conf={0.0 if detection is None else detection.black_arrow_confidence:.3f}',
-                    f'TEMPLATE: {None if detection is None else detection.template_direction} dom={0.0 if detection is None else detection.template_dominance:.3f}',
-                    f'AXIS DEBUG-ONLY: {None if detection is None else detection.axis_direction} conf={0.0 if detection is None else detection.axis_confidence:.3f}',
-                    f'HEAD_ERR: {0.0 if detection is None or detection.heading_error_rad is None else detection.heading_error_rad:.2f}rad',
-                    f'AREA: {float(debug.get("area_ratio", 0.0)):.3f}  CENTER_ERR: {float(debug.get("center_error_px", 0.0)):.0f}px',
-                    f'STATE: {debug.get("state")}',
-                    f'CTRL: {debug.get("control_mode")} HEAD_W={float(debug.get("heading_weight", 0.0)):.2f} PREV_W={float(debug.get("previous_heading_pull_weight", 0.0)):.2f}',
-                    f'TERMS: c={float(debug.get("center_term", 0.0)):.3f} h={float(debug.get("heading_term", 0.0)):.3f} prev={float(debug.get("previous_heading_pull_term", 0.0)):.3f}',
-                    f'BIAS: {float(debug.get("center_bias_deg", 0.0)):.1f}deg  YAW_ERR: {float(debug.get("yaw_error_deg", 0.0)):.1f}deg',
-                    f'CMD: v={float(debug.get("linear_x", 0.0)):.3f} w={float(debug.get("angular_z", 0.0)):.3f}',
-                    f'ACTION: {action}',
+                    f'raw={None if detection is None else detection.raw_direction} dir={debug.get("direction")} stable={debug.get("is_stable")} conf={float(debug.get("confidence", 0.0)):.2f}',
+                    box_text,
+                    f'center={float(debug.get("center_error_px", 0.0)):.0f}px head_valid={False if detection is None else detection.heading_valid} head_conf={0.0 if detection is None else detection.heading_confidence:.2f}',
+                    f'state={debug.get("state")} mode={debug.get("control_mode")}',
+                    f'cmd v={float(debug.get("linear_x", 0.0)):.3f} w={float(debug.get("angular_z", 0.0)):.3f}',
                 ],
             )
             _draw_homography_debug_panel(annotated, detection)
@@ -394,6 +411,12 @@ def analyze(video_path: Path, output_path: Path, csv_path: Path, summary_path: P
                 'stable': 'false' if detection is None else str(detection.is_stable).lower(),
                 'confidence': f'{float(debug.get("confidence", 0.0)):.6f}',
                 'area_ratio': f'{float(debug.get("area_ratio", 0.0)):.6f}',
+                'box_x': '0' if detection is None else str(detection.box.x),
+                'box_y': '0' if detection is None else str(detection.box.y),
+                'box_w': '0' if detection is None else str(detection.box.w),
+                'box_h': '0' if detection is None else str(detection.box.h),
+                'box_area_px': '0' if detection is None else str(int(detection.box.area)),
+                'box_bottom_ratio': '0.000000' if detection is None else f'{(detection.box.y + detection.box.h) / height:.6f}',
                 'center_error_px': f'{float(debug.get("center_error_px", 0.0)):.3f}',
                 'heading_error_rad': '0.000000' if detection is None or detection.heading_error_rad is None else f'{detection.heading_error_rad:.6f}',
                 'heading_angle_deg': '0.000000' if detection is None or detection.heading_angle_deg is None else f'{detection.heading_angle_deg:.6f}',
@@ -436,7 +459,7 @@ def main() -> int:
     parser.add_argument('--output', type=Path)
     parser.add_argument('--csv', type=Path)
     parser.add_argument('--summary', type=Path)
-    parser.add_argument('--config', type=Path, default=Path('tb4_autonomy/config/autonomy.yaml'))
+    parser.add_argument('--config', type=Path, default=Path('tb4_autonomy/config/offline_video_analysis.yaml'))
     args = parser.parse_args()
 
     video_path = args.video
