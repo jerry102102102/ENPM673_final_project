@@ -25,9 +25,13 @@ class PreviewVideoRecorder(Node):
         self.fps = float(args.fps)
         self.duration_sec = float(args.duration) if args.duration is not None else None
         self.show = bool(args.show)
-        self.frame_count = 0
+        self.realtime_output = bool(args.realtime_output)
+        self.received_frame_count = 0
+        self.written_frame_count = 0
         self.writer: cv2.VideoWriter | None = None
         self.started_ns: int | None = None
+        self.started_monotonic: float | None = None
+        self.last_frame = None
         self.stop_requested = False
 
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -83,8 +87,11 @@ class PreviewVideoRecorder(Node):
 
         if self.started_ns is None:
             self.started_ns = self.get_clock().now().nanoseconds
+            self.started_monotonic = time.monotonic()
 
         frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        self.received_frame_count += 1
+        self.last_frame = frame
         if self.writer is None:
             height, width = frame.shape[:2]
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -93,26 +100,66 @@ class PreviewVideoRecorder(Node):
                 raise RuntimeError(f'Could not open video writer for {self.output_path}')
             self.get_logger().info(f'Video initialized: {width}x{height} @ {self.fps:.1f} fps')
 
-        self.writer.write(frame)
-        self.frame_count += 1
+        self._write_frame(frame)
 
         if self.show:
             cv2.imshow('TB4 OAK-D preview recorder', frame)
             if cv2.waitKey(1) == ord('q'):
                 self.request_stop()
 
-        if self.duration_sec is not None and self.started_ns is not None:
-            elapsed_sec = (self.get_clock().now().nanoseconds - self.started_ns) * 1e-9
-            if elapsed_sec >= self.duration_sec:
-                self.request_stop()
+    def _write_frame(self, frame) -> None:
+        if self.writer is None:
+            return
+        if not self.realtime_output or self.started_monotonic is None:
+            self.writer.write(frame)
+            self.written_frame_count += 1
+            return
+
+        elapsed_sec = max(0.0, time.monotonic() - self.started_monotonic)
+        if self.duration_sec is not None:
+            elapsed_sec = min(elapsed_sec, self.duration_sec)
+        target_written_frames = max(1, int(elapsed_sec * self.fps) + 1)
+        while self.written_frame_count < target_written_frames:
+            self.writer.write(frame)
+            self.written_frame_count += 1
+
+    def duration_elapsed(self) -> bool:
+        if self.duration_sec is None or self.started_monotonic is None:
+            return False
+        return time.monotonic() - self.started_monotonic >= self.duration_sec
+
+    def _pad_to_duration(self) -> None:
+        if (
+            not self.realtime_output
+            or self.duration_sec is None
+            or self.writer is None
+            or self.last_frame is None
+        ):
+            return
+        target_written_frames = max(1, int(self.duration_sec * self.fps))
+        while self.written_frame_count < target_written_frames:
+            self.writer.write(self.last_frame)
+            self.written_frame_count += 1
 
     def close(self) -> None:
+        self._pad_to_duration()
         if self.writer is not None:
             self.writer.release()
             self.writer = None
         if self.show:
             cv2.destroyAllWindows()
-        self.get_logger().info(f'Saved {self.frame_count} frames to {self.output_path}')
+        elapsed_sec = 0.0
+        if self.started_monotonic is not None:
+            elapsed_sec = time.monotonic() - self.started_monotonic
+            if self.duration_sec is not None:
+                elapsed_sec = min(elapsed_sec, self.duration_sec)
+        received_fps = self.received_frame_count / elapsed_sec if elapsed_sec > 0 else 0.0
+        output_duration = self.written_frame_count / self.fps if self.fps > 0 else 0.0
+        self.get_logger().info(
+            f'Saved {self.written_frame_count} video frames to {self.output_path} '
+            f'(received={self.received_frame_count}, received_fps={received_fps:.2f}, '
+            f'video_duration={output_duration:.1f}s)'
+        )
 
 
 def parse_args() -> argparse.Namespace:
@@ -139,6 +186,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument('--show', action='store_true', help='Show a live OpenCV preview window.')
     parser.add_argument(
+        '--no-realtime-output',
+        dest='realtime_output',
+        action='store_false',
+        help='Do not duplicate sparse incoming frames to preserve wall-clock video duration.',
+    )
+    parser.add_argument(
         '--topic-timeout',
         type=float,
         default=10.0,
@@ -151,6 +204,7 @@ def parse_args() -> argparse.Namespace:
         help='Skip startup topic visibility/type check.',
     )
     parser.set_defaults(check_topic=True)
+    parser.set_defaults(realtime_output=True)
     args = parser.parse_args()
 
     if not args.output:
@@ -184,6 +238,8 @@ def main() -> int:
     try:
         while rclpy.ok() and not node.stop_requested:
             rclpy.spin_once(node, timeout_sec=0.1)
+            if node.duration_elapsed():
+                node.request_stop()
     finally:
         node.close()
         node.destroy_node()
