@@ -192,17 +192,10 @@ def _paste_debug_thumbnail(canvas, image, title: str, x: int, y: int, width: int
 
     thumb = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
 
-    cv2.rectangle(thumb, (0, 0), (width, 22), (0, 0, 0), -1)
-    cv2.putText(
-        thumb,
-        title,
-        (6, 16),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.45,
-        (255, 255, 255),
-        1,
-        cv2.LINE_AA,
-    )
+    title_h = max(12, int(height * 0.18))
+    text_scale = max(0.28, min(0.45, width / 260.0))
+    cv2.rectangle(thumb, (0, 0), (width, title_h), (0, 0, 0), -1)
+    cv2.putText(thumb, title, (3, max(9, title_h - 4)), cv2.FONT_HERSHEY_SIMPLEX, text_scale, (255, 255, 255), 1, cv2.LINE_AA)
 
     h, w = canvas.shape[:2]
     if x < 0 or y < 0 or x >= w or y >= h:
@@ -218,18 +211,25 @@ def _draw_homography_debug_panel(canvas, detection):
         return
 
     h, w = canvas.shape[:2]
-    panel_w = min(180, max(70, int(w * 0.28)))
+    low_res = min(h, w) <= 320
+    panel_w = min(180, max(52, int(w * (0.18 if low_res else 0.28))))
     panel_h = panel_w
-    gap = 8
+    gap = max(3, int(panel_w * 0.05))
 
-    x = max(0, w - panel_w - 12)
-    y = 12
+    x = max(0, w - panel_w - max(4, int(w * 0.02)))
 
     warped = getattr(detection, 'warped_heading_debug_image', None)
     if warped is None:
         warped = getattr(detection, 'warped_debug_image', None)
     mask = getattr(detection, 'mask_debug_image', None)
 
+    if low_res:
+        # Keep the main scene visible for 250x250 lab recordings.
+        y = max(0, h - panel_h - max(4, int(h * 0.02)))
+        _paste_debug_thumbnail(canvas, mask if mask is not None else warped, 'MASK', x, y, panel_w, panel_h)
+        return
+
+    y = 12
     _paste_debug_thumbnail(canvas, warped, 'WARPED PAPER', x, y, panel_w, panel_h)
     _paste_debug_thumbnail(canvas, mask, 'ARROW MASK', x, y + panel_h + gap, panel_w, panel_h)
 
