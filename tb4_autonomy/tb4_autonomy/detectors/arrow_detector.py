@@ -41,6 +41,7 @@ class ArrowDetectorConfig:
     fallback_bbox_padding_ratio: float = 0.0
     merge_black_fragments_fallback: bool = False
     black_fragment_group_radius_px: float = 55.0
+    black_fragment_seed_max_bottom_ratio: float = 0.0
     black_fragment_expand_x_px: float = 0.0
     black_fragment_expand_y_px: float = 0.0
     black_fragment_min_box_w_px: float = 0.0
@@ -525,8 +526,17 @@ class ArrowDetector:
             return None
 
         # Seed from the closest visible black component, then collect nearby
-        # paper-frame/arrow fragments. This is intentionally offline-only.
-        seed = max(fragments, key=lambda box: (box.y + box.h, box.area))
+        # paper-frame/arrow fragments. For low-res lab videos, prefer an
+        # unclipped black frame over a bottom-clipped nearest paper.
+        seed_candidates = fragments
+        if self.config.black_fragment_seed_max_bottom_ratio > 0.0:
+            unclipped = [
+                box for box in fragments
+                if (box.y + box.h) / float(height) <= self.config.black_fragment_seed_max_bottom_ratio
+            ]
+            if unclipped:
+                seed_candidates = unclipped
+        seed = max(seed_candidates, key=lambda box: (box.y + box.h, box.area))
         seed_center = seed.center
         radius = max(1.0, float(self.config.black_fragment_group_radius_px))
         group = []

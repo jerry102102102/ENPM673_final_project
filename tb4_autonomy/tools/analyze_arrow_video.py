@@ -66,6 +66,7 @@ def _arrow_config(params: dict) -> ArrowDetectorConfig:
         fallback_bbox_padding_ratio=float(params.get('arrow_fallback_bbox_padding_ratio', 0.0)),
         merge_black_fragments_fallback=_as_bool(params.get('arrow_merge_black_fragments_fallback'), False),
         black_fragment_group_radius_px=float(params.get('arrow_black_fragment_group_radius_px', 55.0)),
+        black_fragment_seed_max_bottom_ratio=float(params.get('arrow_black_fragment_seed_max_bottom_ratio', 0.0)),
         black_fragment_expand_x_px=float(params.get('arrow_black_fragment_expand_x_px', 0.0)),
         black_fragment_expand_y_px=float(params.get('arrow_black_fragment_expand_y_px', 0.0)),
         black_fragment_min_box_w_px=float(params.get('arrow_black_fragment_min_box_w_px', 0.0)),
