@@ -38,6 +38,9 @@ class ArrowDetectorConfig:
 
     process_width: int = 960
     bbox_padding_ratio: float = 0.20
+    fallback_bbox_padding_ratio: float = 0.0
+    merge_black_fragments_fallback: bool = False
+    black_fragment_group_radius_px: float = 55.0
     min_arrow_area_ratio: float = 0.01
 
     # Paper candidate config
@@ -152,6 +155,7 @@ class ArrowDetector:
 
         # In live/offline navigation context, prefer paper candidate first.
         # This avoids grabbing upper black/white wall objects before the floor paper.
+        used_fallback_candidate = False
         if context is None:
             candidate = self._select_candidate(mask, require_floor=False)
             if candidate is None:
@@ -159,13 +163,17 @@ class ArrowDetector:
         else:
             candidate = self._select_paper_candidate(scaled_frame, mask)
             if candidate is None:
-                candidate = self._select_candidate(mask)
+                if self.config.merge_black_fragments_fallback:
+                    candidate = self._select_black_fragment_group_candidate(mask)
+                if candidate is None:
+                    candidate = self._select_candidate(mask)
+                used_fallback_candidate = candidate is not None
 
         if candidate is None:
             self.direction_history.append('unknown')
             return None
 
-        corners_small = self._estimate_corners(candidate, mask.shape[:2])
+        corners_small = self._estimate_corners(candidate, mask.shape[:2], used_fallback_candidate)
         corners = self._scale_corners(corners_small, scale)
         paper_transform = self._paper_warp_transform(corners)
         warped = cv2.warpPerspective(frame, paper_transform, (self.config.warp_width, self.config.warp_height))
@@ -474,6 +482,80 @@ class ArrowDetector:
                 merged.append(self._union_boxes(group))
         return merged
 
+    def _select_black_fragment_group_candidate(self, mask):
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        height, width = mask.shape[:2]
+        image_area = float(width * height)
+        if image_area <= 0:
+            return None
+
+        fragments: list[Box2D] = []
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            if w <= 0 or h <= 0:
+                continue
+            area_px = float(w * h)
+            area_ratio = area_px / image_area
+            if area_ratio > self.config.max_candidate_area_ratio:
+                continue
+            if self.config.min_area_px > 0.0 and area_px < self.config.min_area_px:
+                continue
+            if self.config.max_area_px > 0.0 and area_px > self.config.max_area_px:
+                continue
+
+            bottom_ratio = (y + h) / float(height)
+            if bottom_ratio < self.config.min_candidate_bottom_ratio:
+                continue
+            if h / float(height) > self.config.max_candidate_height_ratio:
+                continue
+            if w / float(width) > self.config.max_candidate_width_ratio:
+                continue
+
+            center_x = x + w / 2.0
+            center_error = abs(center_x - width / 2.0)
+            if center_error > width * self.config.candidate_max_center_error_ratio:
+                continue
+            fragments.append(Box2D(x=x, y=y, w=w, h=h))
+
+        if not fragments:
+            return None
+
+        # Seed from the closest visible black component, then collect nearby
+        # paper-frame/arrow fragments. This is intentionally offline-only.
+        seed = max(fragments, key=lambda box: (box.y + box.h, box.area))
+        seed_center = seed.center
+        radius = max(1.0, float(self.config.black_fragment_group_radius_px))
+        group = []
+        for box in fragments:
+            cx, cy = box.center
+            if math.hypot(cx - seed_center[0], cy - seed_center[1]) <= radius:
+                group.append(box)
+
+        if not group:
+            group = [seed]
+        union = self._union_boxes(group)
+        x, y, w, h = union.x, union.y, union.w, union.h
+        area_px = float(w * h)
+        if area_px <= 0.0:
+            return None
+        area_ratio = area_px / image_area
+        if area_ratio > self.config.max_candidate_area_ratio:
+            return None
+
+        roi = mask[y:y + h, x:x + w]
+        black_ratio = cv2.countNonZero(roi) / area_px
+        bottom_score = (y + h) / float(height)
+        area_score = min(1.0, area_ratio / 0.04)
+        density_score = min(1.0, black_ratio / 0.25)
+        score = 0.45 * bottom_score + 0.35 * area_score + 0.20 * density_score
+        return _Candidate(
+            box=union,
+            contour=self._rect_contour(union),
+            area_ratio=area_ratio,
+            black_pixel_ratio=black_ratio,
+            score=score,
+        )
+
     def _paper_boxes_related(self, first: Box2D, second: Box2D, image_width: int) -> bool:
         first_y2 = first.y + first.h
         second_y2 = second.y + second.h
@@ -552,7 +634,7 @@ class ArrowDetector:
             return False
         return True
 
-    def _estimate_corners(self, candidate: _Candidate, mask_shape: tuple[int, int]):
+    def _estimate_corners(self, candidate: _Candidate, mask_shape: tuple[int, int], use_fallback_padding: bool = False):
         contour = candidate.contour
         perimeter = cv2.arcLength(contour, True)
         approx = cv2.approxPolyDP(contour, 0.04 * perimeter, True)
@@ -566,7 +648,10 @@ class ArrowDetector:
                 return self._order_points(box.astype(np.float32))
 
         height, width = mask_shape
-        pad = int(max(candidate.box.w, candidate.box.h) * self.config.bbox_padding_ratio)
+        padding_ratio = self.config.bbox_padding_ratio
+        if use_fallback_padding and self.config.fallback_bbox_padding_ratio > 0.0:
+            padding_ratio = self.config.fallback_bbox_padding_ratio
+        pad = int(max(candidate.box.w, candidate.box.h) * padding_ratio)
         x1 = max(0, candidate.box.x - pad)
         y1 = max(0, candidate.box.y - pad)
         x2 = min(width - 1, candidate.box.x + candidate.box.w + pad)
