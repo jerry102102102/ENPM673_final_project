@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 import signal
 import sys
+import time
 
 import cv2
 from cv_bridge import CvBridge
@@ -30,6 +31,10 @@ class PreviewVideoRecorder(Node):
         self.stop_requested = False
 
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if args.check_topic:
+            self.wait_for_topic(args.topic_timeout)
+
         self.create_subscription(Image, self.topic, self.image_callback, qos_profile_sensor_data)
         self.get_logger().info(f'Subscribed to {self.topic}')
         self.get_logger().info(f'Writing video to {self.output_path}')
@@ -38,6 +43,39 @@ class PreviewVideoRecorder(Node):
 
     def request_stop(self) -> None:
         self.stop_requested = True
+
+    def wait_for_topic(self, timeout_sec: float) -> None:
+        expected_type = 'sensor_msgs/msg/Image'
+        start = time.monotonic()
+        while time.monotonic() - start < timeout_sec:
+            topic_names_and_types = self.get_topic_names_and_types()
+            topic_types = dict(topic_names_and_types)
+            if self.topic in topic_types:
+                types = topic_types[self.topic]
+                if expected_type not in types:
+                    raise RuntimeError(
+                        f'{self.topic} exists, but type is {types}; expected {expected_type}. '
+                        'Use /oakd/rgb/preview/image_raw for this recorder.'
+                    )
+                self.get_logger().info(f'Confirmed topic {self.topic} [{expected_type}]')
+                return
+            time.sleep(0.2)
+
+        visible = self._visible_related_topics()
+        visible_text = '\n'.join(f'  {name}: {types}' for name, types in visible) or '  <none>'
+        raise RuntimeError(
+            f'Timed out after {timeout_sec:.1f}s waiting for {self.topic}.\n'
+            'Visible related topics:\n'
+            f'{visible_text}\n'
+            'Check ROS_DISCOVERY_SERVER, ROS_DOMAIN_ID, Wi-Fi, and robot name.'
+        )
+
+    def _visible_related_topics(self) -> list[tuple[str, list[str]]]:
+        related = []
+        for name, types in self.get_topic_names_and_types():
+            if any(token in name for token in ('tb4_', 'oakd', 'image', 'camera', 'odom', 'cmd_vel', 'scan')):
+                related.append((name, types))
+        return sorted(related)
 
     def image_callback(self, msg: Image) -> None:
         if self.stop_requested:
@@ -100,6 +138,19 @@ def parse_args() -> argparse.Namespace:
         help='Seconds to record. Default: record until Ctrl-C',
     )
     parser.add_argument('--show', action='store_true', help='Show a live OpenCV preview window.')
+    parser.add_argument(
+        '--topic-timeout',
+        type=float,
+        default=10.0,
+        help='Seconds to wait for the image topic before failing. Default: 10',
+    )
+    parser.add_argument(
+        '--no-check-topic',
+        dest='check_topic',
+        action='store_false',
+        help='Skip startup topic visibility/type check.',
+    )
+    parser.set_defaults(check_topic=True)
     args = parser.parse_args()
 
     if not args.output:
@@ -109,13 +160,20 @@ def parse_args() -> argparse.Namespace:
         parser.error('--fps must be positive')
     if args.duration is not None and args.duration <= 0:
         parser.error('--duration must be positive')
+    if args.topic_timeout <= 0:
+        parser.error('--topic-timeout must be positive')
     return args
 
 
 def main() -> int:
     args = parse_args()
     rclpy.init()
-    node = PreviewVideoRecorder(args)
+    try:
+        node = PreviewVideoRecorder(args)
+    except Exception as exc:
+        print(f'[ERROR] {exc}', file=sys.stderr)
+        rclpy.shutdown()
+        return 2
 
     def handle_signal(_signum, _frame):
         node.request_stop()
