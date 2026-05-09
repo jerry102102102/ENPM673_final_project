@@ -10,17 +10,19 @@ import time
 
 import cv2
 from cv_bridge import CvBridge
+import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CompressedImage, Image
 
 
 class PreviewVideoRecorder(Node):
     def __init__(self, args: argparse.Namespace):
         super().__init__('tb4_preview_video_recorder')
         self.bridge = CvBridge()
-        self.topic = args.topic or f'/{args.robot}/oakd/rgb/preview/image_raw'
+        self.compressed = bool(args.compressed)
+        self.topic = args.topic or self._default_topic(args.robot)
         self.output_path = Path(args.output).expanduser().resolve()
         self.fps = float(args.fps)
         self.duration_sec = float(args.duration) if args.duration is not None else None
@@ -39,17 +41,24 @@ class PreviewVideoRecorder(Node):
         if args.check_topic:
             self.wait_for_topic(args.topic_timeout)
 
-        self.create_subscription(Image, self.topic, self.image_callback, qos_profile_sensor_data)
+        msg_type = CompressedImage if self.compressed else Image
+        self.create_subscription(msg_type, self.topic, self.image_callback, qos_profile_sensor_data)
         self.get_logger().info(f'Subscribed to {self.topic}')
+        self.get_logger().info(f'Compressed input: {self.compressed}')
         self.get_logger().info(f'Writing video to {self.output_path}')
         if self.duration_sec is not None:
             self.get_logger().info(f'Recording duration limit: {self.duration_sec:.1f}s')
+
+    def _default_topic(self, robot: str) -> str:
+        if self.compressed:
+            return f'/{robot}/oakd/rgb/image_raw/compressed'
+        return f'/{robot}/oakd/rgb/preview/image_raw'
 
     def request_stop(self) -> None:
         self.stop_requested = True
 
     def wait_for_topic(self, timeout_sec: float) -> None:
-        expected_type = 'sensor_msgs/msg/Image'
+        expected_type = 'sensor_msgs/msg/CompressedImage' if self.compressed else 'sensor_msgs/msg/Image'
         start = time.monotonic()
         while time.monotonic() - start < timeout_sec:
             topic_names_and_types = self.get_topic_names_and_types()
@@ -59,7 +68,8 @@ class PreviewVideoRecorder(Node):
                 if expected_type not in types:
                     raise RuntimeError(
                         f'{self.topic} exists, but type is {types}; expected {expected_type}. '
-                        'Use /oakd/rgb/preview/image_raw for this recorder.'
+                        'Use --compressed for /oakd/rgb/image_raw/compressed, or use '
+                        '/oakd/rgb/preview/image_raw without --compressed.'
                     )
                 self.get_logger().info(f'Confirmed topic {self.topic} [{expected_type}]')
                 return
@@ -81,7 +91,7 @@ class PreviewVideoRecorder(Node):
                 related.append((name, types))
         return sorted(related)
 
-    def image_callback(self, msg: Image) -> None:
+    def image_callback(self, msg: Image | CompressedImage) -> None:
         if self.stop_requested:
             return
 
@@ -89,7 +99,7 @@ class PreviewVideoRecorder(Node):
             self.started_ns = self.get_clock().now().nanoseconds
             self.started_monotonic = time.monotonic()
 
-        frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        frame = self._message_to_bgr_frame(msg)
         self.received_frame_count += 1
         self.last_frame = frame
         if self.writer is None:
@@ -106,6 +116,15 @@ class PreviewVideoRecorder(Node):
             cv2.imshow('TB4 OAK-D preview recorder', frame)
             if cv2.waitKey(1) == ord('q'):
                 self.request_stop()
+
+    def _message_to_bgr_frame(self, msg: Image | CompressedImage):
+        if self.compressed:
+            np_arr = np.frombuffer(msg.data, np.uint8)
+            frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            if frame is None:
+                raise RuntimeError('cv2.imdecode returned None for compressed image')
+            return frame
+        return self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
 
     def _write_frame(self, frame) -> None:
         if self.writer is None:
@@ -170,7 +189,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--topic',
         default='',
-        help='Image topic override. Default: /<robot>/oakd/rgb/preview/image_raw',
+        help=(
+            'Image topic override. Default: /<robot>/oakd/rgb/preview/image_raw, '
+            'or /<robot>/oakd/rgb/image_raw/compressed with --compressed'
+        ),
+    )
+    parser.add_argument(
+        '--compressed',
+        action='store_true',
+        help='Subscribe to sensor_msgs/CompressedImage. Default topic becomes /<robot>/oakd/rgb/image_raw/compressed.',
     )
     parser.add_argument(
         '--output',
