@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 
 from tb4_autonomy_real.data_types import Box2D, StaticBallDetection
+from tb4_autonomy_real.detectors.real_ball_fallback import detect_real_colored_ball
 
 
 @dataclass(frozen=True)
@@ -34,10 +35,12 @@ class StaticObstacleDetector:
         if frame is None or frame.size == 0:
             return None
 
+        color_detection = self._detect_real_ball(frame)
+
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         if self.prev_gray is None:
             self.prev_gray = gray
-            return None
+            return color_detection
 
         flow = cv2.calcOpticalFlowFarneback(
             self.prev_gray,
@@ -78,7 +81,14 @@ class StaticObstacleDetector:
             if detection is not None and score > best_score:
                 best_detection = detection
                 best_score = score
-        return best_detection
+        return color_detection or best_detection
+
+    @staticmethod
+    def _detect_real_ball(frame):
+        candidate = detect_real_colored_ball(frame, prefer='white')
+        if candidate is None:
+            return None
+        return StaticBallDetection(candidate.box, candidate.confidence, candidate.mask)
 
     def _detection_from_contour(self, contour, debug_image):
         area = float(cv2.contourArea(contour))

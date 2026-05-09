@@ -162,11 +162,11 @@ def draw_detections(image, results: DetectionResults) -> None:
             image,
             results.static_ball.box,
             RED,
-            f'STATIC FLOW BALL conf={results.static_ball.confidence:.2f}',
+            f'STATIC BALL conf={results.static_ball.confidence:.2f}',
         )
         draw_debug_thumbnail(
             image,
             results.static_ball.mask_debug_image,
-            'STATIC FLOW MASK',
+            'STATIC BALL MASK',
             (image.shape[1] - 192, image.shape[0] - 224),
         )

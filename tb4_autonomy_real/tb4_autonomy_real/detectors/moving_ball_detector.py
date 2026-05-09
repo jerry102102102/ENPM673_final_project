@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 
 from tb4_autonomy_real.data_types import BallDetection, Box2D, FrameContext
+from tb4_autonomy_real.detectors.real_ball_fallback import detect_real_colored_ball
 
 
 class MovingBallDetector:
@@ -111,9 +112,12 @@ class MovingBallDetector:
         now = 0.0 if context is None else context.stamp_sec
 
         ball_contour, best_score, mask_debug_image = self._find_ball(frame)
+        real_candidate = None
+        if ball_contour is None:
+            real_candidate = detect_real_colored_ball(frame, prefer='red_blue')
 
         # No ball found — handle persistence and stop timer
-        if ball_contour is None:
+        if ball_contour is None and real_candidate is None:
             self.prev_center = None
             self.static_count = 0
 
@@ -143,8 +147,14 @@ class MovingBallDetector:
             return None
 
         # Get bounding box
-        x, y, w, h = cv2.boundingRect(ball_contour)
-        box = Box2D(x=x, y=y, w=w, h=h)
+        if real_candidate is not None:
+            box = real_candidate.box
+            confidence = real_candidate.confidence
+            mask_debug_image = real_candidate.mask
+        else:
+            x, y, w, h = cv2.boundingRect(ball_contour)
+            box = Box2D(x=x, y=y, w=w, h=h)
+            confidence = min(1.0, best_score / 10000.0)
         cx, cy = box.center
 
         center = (cx, cy)
@@ -206,6 +216,6 @@ class MovingBallDetector:
             box=box,
             moving=True,
             ttc=ttc,
-            confidence=min(1.0, best_score / 10000.0),
+            confidence=confidence,
             mask_debug_image=mask_debug_image,
         )
