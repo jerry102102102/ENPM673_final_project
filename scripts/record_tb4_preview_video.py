@@ -51,7 +51,7 @@ class PreviewVideoRecorder(Node):
 
     def _default_topic(self, robot: str) -> str:
         if self.compressed:
-            return f'/{robot}/oakd/rgb/image_raw/compressed'
+            return f'/{robot}/oakd/rgb/preview/image_raw/compressed'
         return f'/{robot}/oakd/rgb/preview/image_raw'
 
     def request_stop(self) -> None:
@@ -68,7 +68,7 @@ class PreviewVideoRecorder(Node):
                 if expected_type not in types:
                     raise RuntimeError(
                         f'{self.topic} exists, but type is {types}; expected {expected_type}. '
-                        'Use --compressed for /oakd/rgb/image_raw/compressed, or use '
+                        'Use --compressed for /oakd/rgb/preview/image_raw/compressed, or use '
                         '/oakd/rgb/preview/image_raw without --compressed.'
                     )
                 self.get_logger().info(f'Confirmed topic {self.topic} [{expected_type}]')
@@ -191,13 +191,13 @@ def parse_args() -> argparse.Namespace:
         default='',
         help=(
             'Image topic override. Default: /<robot>/oakd/rgb/preview/image_raw, '
-            'or /<robot>/oakd/rgb/image_raw/compressed with --compressed'
+            'or /<robot>/oakd/rgb/preview/image_raw/compressed with --compressed'
         ),
     )
     parser.add_argument(
         '--compressed',
         action='store_true',
-        help='Subscribe to sensor_msgs/CompressedImage. Default topic becomes /<robot>/oakd/rgb/image_raw/compressed.',
+        help='Subscribe to sensor_msgs/CompressedImage. Default topic becomes /<robot>/oakd/rgb/preview/image_raw/compressed.',
     )
     parser.add_argument(
         '--output',
