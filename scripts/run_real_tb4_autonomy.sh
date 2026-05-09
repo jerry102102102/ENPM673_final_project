@@ -13,7 +13,7 @@ Options:
   --dry-run=true|false          Publish zero cmd_vel while running perception. Default: false
   --use-rviz=true|false         Launch RViz with /debug/annotated_image. Default: true
   --reset-odom=true|false       Call /<robot>/reset_pose before launch. Default: true
-  --launch=true|false           Start tb4_autonomy after health checks. Default: true
+  --launch=true|false           Start tb4_autonomy_real after health checks. Default: true
   --image-topic=/topic          Override auto-detected camera image topic.
   --image-is-compressed=true|false
                                   Override whether image topic is sensor_msgs/CompressedImage.
@@ -201,7 +201,7 @@ perf_topic="$ns/autonomy/perf"
 debug_image_topic="$ns/debug/annotated_image"
 
 if [[ "$use_rviz" == true ]]; then
-  default_rviz_config="$repo_root/tb4_autonomy/config/rviz.rviz"
+  default_rviz_config="$repo_root/tb4_autonomy_real/config/rviz.rviz"
   [[ -f "$default_rviz_config" ]] || fail "Missing RViz config $default_rviz_config"
   RVIZ_CONFIG_FILE="$(mktemp --suffix=_${robot}_rviz.rviz)"
   sed "s#Value: /debug/annotated_image#Value: $debug_image_topic#g" \
@@ -331,8 +331,8 @@ if [[ "$do_launch" != true ]]; then
   exit 0
 fi
 
-info "Launching tb4_autonomy for $robot"
-exec ros2 launch tb4_autonomy autonomy.launch.py \
+info "Launching tb4_autonomy_real for $robot"
+exec ros2 launch tb4_autonomy_real autonomy.launch.py \
   dry_run:="$dry_run" \
   use_rviz:="$use_rviz" \
   image_topic:="$image_topic" \
@@ -343,6 +343,6 @@ exec ros2 launch tb4_autonomy autonomy.launch.py \
   cmd_vel_topic:="$cmd_vel_topic" \
   cmd_vel_stamped:="$cmd_vel_stamped" \
   annotated_image_topic:="$debug_image_topic" \
-  rviz_config:="${RVIZ_CONFIG_FILE:-$repo_root/tb4_autonomy/config/rviz.rviz}" \
+  rviz_config:="${RVIZ_CONFIG_FILE:-$repo_root/tb4_autonomy_real/config/rviz.rviz}" \
   state_topic:="$state_topic" \
   perf_topic:="$perf_topic"

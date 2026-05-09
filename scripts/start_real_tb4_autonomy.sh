@@ -235,7 +235,7 @@ if [[ "$reset_odom" == true ]]; then
     || fail "reset_pose call failed. See /tmp/${robot}_reset_pose.log"
 fi
 
-rviz_config="$repo_root/tb4_autonomy/config/rviz.rviz"
+rviz_config="$repo_root/tb4_autonomy_real/config/rviz.rviz"
 if [[ "$use_rviz" == true ]]; then
   rviz_config_tmp="$(mktemp --suffix=_${robot}_rviz.rviz)"
   sed "s#Value: /debug/annotated_image#Value: $debug_image_topic#g" \
@@ -252,7 +252,7 @@ info "  scan_topic=$scan_topic"
 info "  cmd_vel_topic=$cmd_vel_topic type=${cmd_type:-unknown} stamped=$cmd_vel_stamped"
 info "  debug_image_topic=$debug_image_topic"
 
-exec ros2 launch tb4_autonomy autonomy.launch.py \
+exec ros2 launch tb4_autonomy_real autonomy.launch.py \
   dry_run:="$dry_run" \
   use_rviz:="$use_rviz" \
   image_topic:="$image_topic" \
