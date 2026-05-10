@@ -20,13 +20,16 @@ real_vision_controller_node:
       previous_heading_pull_max_angular_z: 0.070
       latched_heading_confidence_min: 0.35
       latched_arrow_presence_confidence_min: 0.25
-      kp_heading: 0.30
+      # Teammate real-run feedback: the robot is turning too early from the
+      # currently visible paper center. Shift control authority toward the
+      # forward arrow heading while keeping the same heading scale/latching.
+      kp_heading: 0.60
       center_sign: -1.0
-      kp_center: 0.45
+      kp_center: 0.25
       center_capture_threshold_px: 35.0
       min_center_bias_gain: 0.10
-      max_center_bias_gain: 0.45
-      max_center_bias_deg: 6.0
+      max_center_bias_gain: 0.30
+      max_center_bias_deg: 3.0
       max_angular_z: 0.10
       max_angular_accel: 0.15
       angular_lowpass_alpha: 0.12
