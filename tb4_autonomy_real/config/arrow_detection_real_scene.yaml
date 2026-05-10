@@ -13,16 +13,15 @@ real_vision_controller_node:
       heading_sign: 1.0
       heading_scale: 0.15
       heading_oversteer_deg: 2.0
-      latched_yaw_alpha: 0.20
-      previous_heading_pull_gain: 0.60
-      previous_heading_pull_decay_sec: 3.50
+      latched_yaw_alpha: 0.06
+      previous_heading_pull_gain: 0.90
+      previous_heading_pull_decay_sec: 4.50
       previous_heading_pull_start_delta_deg: 8.0
-      previous_heading_pull_max_angular_z: 0.070
+      previous_heading_pull_max_angular_z: 0.080
       latched_heading_confidence_min: 0.35
       latched_arrow_presence_confidence_min: 0.25
-      # Teammate real-run feedback: the robot is turning too early from the
-      # currently visible paper center. Shift control authority toward the
-      # forward arrow heading while keeping the same heading scale/latching.
+      # Teammate real-run feedback: the robot sees far papers and turns early.
+      # Track the slower latched world yaw, not each current-frame arrow heading.
       kp_heading: 0.60
       center_sign: -1.0
       kp_center: 0.25

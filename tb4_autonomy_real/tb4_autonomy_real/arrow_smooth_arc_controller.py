@@ -221,6 +221,7 @@ class ArrowSmoothArcController:
 
         if self.state == AutonomyState.SMOOTH_ARC_TRACK:
             latched_updated = False
+            had_latched_world_yaw = self.latched_world_yaw is not None
             is_close = paper_valid and self._is_close(detection, image_height)
             if paper_valid:
                 if not is_close or self.latched_world_yaw is None:
@@ -262,7 +263,15 @@ class ArrowSmoothArcController:
                 self._remember_timing(now_sec, output.twist.angular.z)
                 return output
 
-            output = self._track_output(detection, image_width, image_height, now_sec, current_odom_yaw, transition_reason)
+            output = self._track_output(
+                detection,
+                image_width,
+                image_height,
+                now_sec,
+                current_odom_yaw,
+                transition_reason,
+                use_latched_heading=had_latched_world_yaw,
+            )
             output.debug_info['latched_updated'] = latched_updated
             output.debug_info['heading_update_accepted'] = latched_updated
             self._remember_timing(now_sec, output.twist.angular.z)
@@ -519,6 +528,8 @@ class ArrowSmoothArcController:
         now_sec: float,
         current_odom_yaw: float | None,
         transition_reason: str,
+        *,
+        use_latched_heading: bool,
     ) -> ArrowSmoothArcOutput:
         center_error_px = float(detection.center_error_px)
         center_angle = math.atan2(center_error_px, max(1.0, self.config.focal_px))
@@ -526,8 +537,16 @@ class ArrowSmoothArcController:
         center_term = clamp(center_term, -self.config.max_center_bias_rad, self.config.max_center_bias_rad)
 
         heading_valid = bool(getattr(detection, 'heading_valid', False))
-        heading_error = detection.heading_error_rad if detection.heading_error_rad is not None else 0.0
-        if heading_valid and detection.heading_error_rad is not None:
+        detected_heading_error = detection.heading_error_rad if detection.heading_error_rad is not None else 0.0
+        if use_latched_heading and current_odom_yaw is not None and self.latched_world_yaw is not None:
+            heading_error = shortest_angular_distance(current_odom_yaw, self.latched_world_yaw)
+            heading_control_source = 'latched_world_yaw'
+            heading_weight = 1.0
+            corrected_heading_error = self._oversteer_heading_error(float(heading_error))
+            heading_term = self.config.kp_heading * corrected_heading_error
+        elif heading_valid and detection.heading_error_rad is not None:
+            heading_error = detected_heading_error
+            heading_control_source = 'current_detection_heading'
             heading_weight = self._confidence_weight(detection)
             corrected_heading_error = self._oversteer_heading_error(float(heading_error))
             heading_term = (
@@ -537,6 +556,8 @@ class ArrowSmoothArcController:
                 * corrected_heading_error
             )
         else:
+            heading_error = 0.0
+            heading_control_source = 'none'
             heading_weight = 0.0
             heading_term = 0.0
             corrected_heading_error = 0.0
@@ -570,7 +591,9 @@ class ArrowSmoothArcController:
             effective_center_gain=self.config.kp_center,
             center_bias=center_term,
             heading_error=heading_error,
+            detected_heading_error_rad=detected_heading_error,
             corrected_heading_error=corrected_heading_error,
+            heading_control_source=heading_control_source,
             heading_valid=heading_valid,
             heading_weight=heading_weight,
             center_term=center_term,
