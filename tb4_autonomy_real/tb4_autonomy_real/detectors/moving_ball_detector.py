@@ -192,18 +192,30 @@ class MovingBallDetector:
         # Assumes translational motion only (per project spec)
         bbox_area = float(box.area)
         ttc = None
-        if (
-            self.prev_bbox_area is not None
-            and self.prev_stamp is not None
-            and (context is None or context.odom_linear_x > 0.01)
-        ):
+        if (self.prev_bbox_area is not None
+                and self.prev_stamp is not None):
             dt = now - self.prev_stamp
             if dt > 1e-6:
                 area_growth = (bbox_area - self.prev_bbox_area) / dt
-                if area_growth > 1.0:  # ball must be approaching
-                    ttc = bbox_area / area_growth
-                    ttc = float(max(0.0, min(ttc, 30.0)))
-                    ttc = round(ttc, 1)
+                if area_growth > 1.0:
+                # Ball approaching camera — use area growth rate
+                ttc = bbox_area / area_growth
+                ttc = float(max(0.0, min(ttc, 30.0)))
+                ttc = round(ttc, 1)
+             elif (context is not None
+                  and context.odom_linear_x > 0.01
+                  and bbox_area > 0):
+                 # Ball rolling sideways — estimate TTC from robot speed
+                 # Use bbox width as proxy for distance
+                 # Wider bbox = closer = less time
+                 # Approximate: TTC = bbox_area / (robot_speed * scale_factor)
+                 robot_speed = context.odom_linear_x
+                 # Scale factor tuned for real camera FOV
+                 # Higher area = closer, faster approach = lower TTC
+                 estimated_distance = 1.0 / max(0.001, (bbox_area / 10000.0) ** 0.5)
+                 ttc = estimated_distance / max(0.01, robot_speed)
+                 ttc = float(max(0.0, min(ttc, 30.0)))
+                 ttc = round(ttc, 1)
 
         self.prev_bbox_area = bbox_area
         self.prev_stamp = now
